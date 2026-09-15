@@ -9,8 +9,6 @@ from collections import defaultdict
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-from adaptive_agent.memory import ROOT
-
 SKIP_DIRS = {".git", ".venv", "venv", "__pycache__", "node_modules", "dist", "build"}
 
 
@@ -132,8 +130,10 @@ COMMON_CALLEES = {
 }
 
 
-def build_code_graph(root: Path | None = None) -> CodeGraph:
-    root = (root or ROOT).resolve()
+def build_code_graph(root: Path, *, since_commit: str | None = None) -> CodeGraph:
+    root = Path(root).resolve()
+    if not root.is_dir():
+        raise FileNotFoundError(f"Repo path does not exist: {root}")
     files = iter_python_files(root)
     rels = {path: path.relative_to(root).as_posix() for path in files}
     modules = {module_name(rel): rel for rel in rels.values()}
@@ -188,7 +188,7 @@ def build_code_graph(root: Path | None = None) -> CodeGraph:
                     if owner in imported_files:
                         graph.add_edge(source, tid, "calls", 1.0)
 
-    for a, b, weight in _coedit_pairs(root):
+    for a, b, weight in _coedit_pairs(root, since_commit=since_commit):
         if file_id(a) in graph.nodes and file_id(b) in graph.nodes:
             graph.add_edge(file_id(a), file_id(b), "coedit", float(weight))
             graph.add_edge(file_id(b), file_id(a), "coedit", float(weight))
@@ -301,10 +301,25 @@ def _function_calls(tree: ast.AST) -> list[tuple[str, str]]:
     return pairs
 
 
-def _coedit_pairs(root: Path) -> list[tuple[str, str, int]]:
+def git_head(root: Path) -> str | None:
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "HEAD"],
+            cwd=root,
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+    except (OSError, subprocess.CalledProcessError):
+        return None
+
+
+def _coedit_pairs(root: Path, since_commit: str | None = None) -> list[tuple[str, str, int]]:
+    cmd = ["git", "log", "--name-only", "--pretty=format:COMMIT %H"]
+    if since_commit:
+        cmd.append(f"{since_commit}..HEAD")
     try:
         raw = subprocess.check_output(
-            ["git", "log", "--name-only", "--pretty=format:COMMIT %H"],
+            cmd,
             cwd=root,
             text=True,
             stderr=subprocess.DEVNULL,
@@ -333,30 +348,45 @@ def _tally_bucket(files: list[str], counts: dict[tuple[str, str], int]) -> None:
             counts[(a, b)] += 1
 
 
-def save_graph(graph: CodeGraph, path: Path | None = None) -> Path:
-    path = path or (ROOT / "data" / "code_graph.json")
+def save_graph(graph: CodeGraph, path: Path) -> Path:
+    path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(graph.to_dict(), indent=2), encoding="utf-8")
     return path
 
 
-def main() -> None:
-    graph = build_code_graph()
-    out = save_graph(graph)
-    print(graph.summary())
-    print(f"wrote {out}")
+def format_preview(graph: CodeGraph, limit: int = 20) -> str:
     by_kind: dict[str, list[Edge]] = defaultdict(list)
     for edge in graph.edges.values():
         by_kind[edge.kind].append(edge)
+    lines = [graph.summary()]
     for kind in ("import", "calls", "coedit", "defines"):
         edges = by_kind.get(kind, [])
         if not edges:
             continue
-        print(f"\n{kind} ({len(edges)})")
-        for edge in edges[:20]:
-            print(f"  {edge.source} -> {edge.target}  w={edge.weight:g}")
-        if len(edges) > 20:
-            print(f"  ... {len(edges) - 20} more")
+        lines.append(f"\n{kind} ({len(edges)})")
+        for edge in edges[:limit]:
+            lines.append(f"  {edge.source} -> {edge.target}  w={edge.weight:g}")
+        if len(edges) > limit:
+            lines.append(f"  ... {len(edges) - limit} more")
+    return "\n".join(lines)
+
+
+def main() -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Extract import, call, and co-edit edges from a Python git repo."
+    )
+    parser.add_argument("--repo", required=True, help="Path to the target codebase (not this agent repo unless you pass it)")
+    parser.add_argument("--out", default="", help="Optional JSON output path")
+    args = parser.parse_args()
+    root = Path(args.repo).resolve()
+    graph = build_code_graph(root)
+    print(format_preview(graph))
+    if args.out:
+        out = save_graph(graph, Path(args.out))
+        print(f"\nwrote {out}")
 
 
 if __name__ == "__main__":

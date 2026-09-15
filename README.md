@@ -39,15 +39,20 @@ Defaults to **approve**. To reject the proposal:
 python lessons/l2_skill_induction.py --decision reject --reason "not ready"
 ```
 
-## Code graph
+## Code-graph agent
 
-Build a graph of this repo from **import** edges, **function-call** edges, and **git co-edit** edges:
+A coding agent that extracts **import**, **function-call**, and **git co-edit** edges from **any** Python repo you point it at:
 
 ```powershell
-python lessons/l3_code_graph.py
+python lessons/l3_code_graph.py --repo C:\path\to\some-other-project
+python lessons/l3_code_graph.py --repo C:\path\to\some-other-project "What imports auth?"
 ```
 
-Writes `data/code_graph.json`.
+Extractor only (no LLM):
+
+```powershell
+python -m adaptive_agent.code_graph --repo C:\path\to\some-other-project --out data\graphs\example.json
+```
 
 ## Config
 
