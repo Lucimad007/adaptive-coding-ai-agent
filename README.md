@@ -39,6 +39,16 @@ Defaults to **approve**. To reject the proposal:
 python lessons/l2_skill_induction.py --decision reject --reason "not ready"
 ```
 
+## Code graph
+
+Build a graph of this repo from **import** edges, **function-call** edges, and **git co-edit** edges:
+
+```powershell
+python lessons/l3_code_graph.py
+```
+
+Writes `data/code_graph.json`.
+
 ## Config
 
 | Variable | Default | Notes |
