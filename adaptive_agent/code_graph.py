@@ -303,6 +303,14 @@ def _function_calls(tree: ast.AST) -> list[tuple[str, str]]:
 
 def git_head(root: Path) -> str | None:
     try:
+        top = subprocess.check_output(
+            ["git", "rev-parse", "--show-toplevel"],
+            cwd=root,
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+        if Path(top).resolve() != Path(root).resolve():
+            return None
         return subprocess.check_output(
             ["git", "rev-parse", "HEAD"],
             cwd=root,
@@ -314,6 +322,8 @@ def git_head(root: Path) -> str | None:
 
 
 def _coedit_pairs(root: Path, since_commit: str | None = None) -> list[tuple[str, str, int]]:
+    if git_head(root) is None:
+        return []
     cmd = ["git", "log", "--name-only", "--pretty=format:COMMIT %H"]
     if since_commit:
         cmd.append(f"{since_commit}..HEAD")

@@ -9,7 +9,9 @@ from langchain.agents import create_agent
 from langchain_core.messages import HumanMessage
 from langchain_core.tools import tool
 
-from adaptive_agent.code_graph import build_code_graph, format_preview, save_graph
+from adaptive_agent.code_graph import build_code_graph, save_graph
+from adaptive_agent.graph_store import GraphDB
+from adaptive_agent.graph_sync import sync_once
 from adaptive_agent.llm import build_llm
 from adaptive_agent.memory import ROOT
 
@@ -78,16 +80,30 @@ def graph_neighbors(repo_path: str, query: str, limit: int = 15) -> str:
     return "\n".join(lines) or "No edges."
 
 
+@tool
+def sync_code_graph(repo_path: str) -> str:
+    """Run one adaptation cycle on a target repo.
+
+    New commits -> extract edges -> MERGE into SQLite -> append co-edits and re-rank (PageRank).
+    Call this on a schedule or after the user says the codebase changed.
+    """
+    root = Path(repo_path).expanduser().resolve()
+    result = sync_once(root, GraphDB())
+    _GRAPHS.pop(str(root), None)
+    return result
+
+
 def build_graph_agent():
     return create_agent(
         model=build_llm(),
-        tools=[extract_code_graph, list_graph_edges, graph_neighbors],
+        tools=[extract_code_graph, list_graph_edges, graph_neighbors, sync_code_graph],
         system_prompt=(
             "You are a code-graph agent. The user gives a path to SOME OTHER codebase "
             "and a question. First extract_code_graph on that path, then use "
-            "list_graph_edges and graph_neighbors to answer. Explain import, call, "
-            "and co-edit relations. Do not assume the repo is this adaptive-ai-agent "
-            "project unless the user passes that path."
+            "list_graph_edges and graph_neighbors to answer. Use sync_code_graph when "
+            "the codebase may have new commits and the graph should merge + re-rank. "
+            "Explain import, call, and co-edit relations. Do not assume the repo is this "
+            "adaptive-ai-agent project unless the user passes that path."
         ),
     )
 
@@ -107,13 +123,7 @@ def main() -> None:
         "Summarize the graph and show a few examples of each edge type."
     )
     agent = build_graph_agent()
-    result = agent.invoke(
-        {
-            "messages": [
-                HumanMessage(content=question),
-            ]
-        }
-    )
+    result = agent.invoke({"messages": [HumanMessage(content=question)]})
     print(result["messages"][-1].content)
 
 

@@ -54,6 +54,13 @@ Extractor only (no LLM):
 python -m adaptive_agent.code_graph --repo C:\path\to\some-other-project --out data\graphs\example.json
 ```
 
+Keep the graph current (new commits → extract → MERGE into SQLite → PageRank re-rank). Once, or on an interval:
+
+```powershell
+python -m adaptive_agent.graph_sync --repo C:\path\to\some-other-project
+python -m adaptive_agent.graph_sync --repo C:\path\to\some-other-project --interval 60
+```
+
 ## Config
 
 | Variable | Default | Notes |
