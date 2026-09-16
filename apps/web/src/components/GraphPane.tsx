@@ -30,7 +30,7 @@ export default function GraphPane({
             ? { background: "#f0c14b", border: "#f5d98a" }
             : walk.has(n.id)
               ? { background: "#333333", border: "#f0c14b" }
-              : { background: "#262626", border: "#484848" },
+              : { background: "#262626", border: "#2a2a2a" },
         shape: (n.kind === "file" ? "box" : "dot") as const,
       }));
       const idSet = new Set(nodes.map((n) => n.id));

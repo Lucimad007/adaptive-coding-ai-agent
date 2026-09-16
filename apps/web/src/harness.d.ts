@@ -11,6 +11,12 @@ export type AgentEvent = {
 };
 
 export type HarnessApi = {
+  platform?: "win32" | "darwin" | "linux";
+  minimizeWindow?: () => Promise<void>;
+  maximizeWindow?: () => Promise<void>;
+  closeWindow?: () => Promise<void>;
+  isWindowMaximized?: () => Promise<boolean>;
+  onWindowMaximized?: (cb: (maximized: boolean) => void) => () => void;
   tree: () => Promise<{ tree: unknown[] }>;
   read: (rel: string) => Promise<{ path: string; content: string }>;
   write: (rel: string, content: string) => Promise<{ ok: boolean }>;

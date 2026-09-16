@@ -20,6 +20,7 @@
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
   --color-border: var(--border);
+  --color-border-subtle: var(--border-subtle);
   --color-input: var(--input);
   --color-ring: var(--ring);
   --color-success: var(--success);
@@ -52,8 +53,9 @@
   --accent-foreground: #f5f5f5;
   --destructive: #ff6b6b;
   --destructive-foreground: #1a0808;
-  --border: #484848;
-  --input: #484848;
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --border: #2a2a2a;
+  --input: #333333;
   --ring: #f0c14b;
   --success: #5ee0a0;
   --success-foreground: #04140c;
@@ -66,7 +68,7 @@
   --editor: #1e1e1e;
   --chat: #1c1c1c;
   --elev-raised: 0 1px 0 rgba(255, 255, 255, 0.07) inset, 0 10px 28px rgba(0, 0, 0, 0.45);
-  --elev-inset: inset 0 1px 2px rgba(0, 0, 0, 0.45), inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+  --elev-inset: inset 0 1px 2px rgba(0, 0, 0, 0.35), inset 0 0 0 1px rgba(255, 255, 255, 0.03);
   --elev-float: 0 12px 36px rgba(0, 0, 0, 0.4), 0 1px 0 rgba(255, 255, 255, 0.06) inset;
 }
 
@@ -84,7 +86,7 @@ body {
 }
 
 * {
-  border-color: var(--border);
+  border-color: var(--border-subtle);
 }
 
 * {
@@ -126,22 +128,21 @@ body {
 
 .surface-sidebar {
   background: var(--sidebar);
-  box-shadow: var(--elev-inset);
+  box-shadow: inset -1px 0 0 var(--border-subtle);
 }
 
 .surface-editor {
   background: var(--editor);
-  box-shadow: var(--elev-raised);
 }
 
 .surface-chat {
   background: var(--chat);
-  box-shadow: -12px 0 28px rgba(0, 0, 0, 0.28);
+  box-shadow: inset 1px 0 0 var(--border-subtle);
 }
 
 .surface-chrome {
-  background: color-mix(in srgb, var(--sidebar) 88%, #000);
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.05) inset, 0 8px 16px rgba(0, 0, 0, 0.25);
+  background: var(--sidebar);
+  box-shadow: inset 0 -1px 0 var(--border-subtle);
 }
 
 .surface-inset {
@@ -152,9 +153,28 @@ body {
 .surface-code {
   background: var(--code);
   box-shadow: var(--elev-inset);
-  border-color: var(--border);
+  border-color: var(--border-subtle);
+}
+
+.panel-divider {
+  flex-shrink: 0;
+  background: var(--border-subtle);
+  transition: background-color 120ms ease;
+}
+
+.panel-divider:hover,
+.panel-divider[data-resize-handle-active] {
+  background: rgba(255, 255, 255, 0.1);
 }
 
 .hairline {
-  background: var(--border);
+  background: var(--border-subtle);
+}
+
+.titlebar {
+  -webkit-app-region: drag;
+}
+
+.titlebar-no-drag {
+  -webkit-app-region: no-drag;
 }

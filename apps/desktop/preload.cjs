@@ -1,6 +1,16 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("harness", {
+  platform: process.platform,
+  minimizeWindow: () => ipcRenderer.invoke("window:minimize"),
+  maximizeWindow: () => ipcRenderer.invoke("window:maximize"),
+  closeWindow: () => ipcRenderer.invoke("window:close"),
+  isWindowMaximized: () => ipcRenderer.invoke("window:isMaximized"),
+  onWindowMaximized: (cb) => {
+    const handler = (_e, maximized) => cb(maximized);
+    ipcRenderer.on("window:maximized", handler);
+    return () => ipcRenderer.removeListener("window:maximized", handler);
+  },
   tree: () => ipcRenderer.invoke("files:tree"),
   read: (rel) => ipcRenderer.invoke("files:read", rel),
   write: (rel, content) => ipcRenderer.invoke("files:write", rel, content),

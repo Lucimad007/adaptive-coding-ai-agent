@@ -100,6 +100,8 @@ function createWindow() {
     height: 900,
     title: "Patchline",
     icon: appIcon.isEmpty() ? iconPath : appIcon,
+    frame: false,
+    backgroundColor: "#161616",
     webPreferences: {
       preload: path.join(here, "preload.cjs"),
       contextIsolation: true,
@@ -115,6 +117,9 @@ function createWindow() {
     const index = path.join(process.resourcesPath, "renderer", "index.html");
     win.loadFile(index);
   }
+  const sendMax = () => win?.webContents.send("window:maximized", win.isMaximized());
+  win.on("maximize", sendMax);
+  win.on("unmaximize", sendMax);
 }
 
 ipcMain.handle("files:tree", () => ({ tree: tree() }));
@@ -204,6 +209,18 @@ ipcMain.on("term:close", () => {
   shellProc?.kill();
   shellProc = null;
 });
+
+ipcMain.handle("window:minimize", () => {
+  win?.minimize();
+});
+ipcMain.handle("window:maximize", () => {
+  if (win?.isMaximized()) win.unmaximize();
+  else win?.maximize();
+});
+ipcMain.handle("window:close", () => {
+  win?.close();
+});
+ipcMain.handle("window:isMaximized", () => win?.isMaximized() ?? false);
 
 app.whenReady().then(() => {
   if (!appIcon.isEmpty() && process.platform === "darwin" && app.dock) {

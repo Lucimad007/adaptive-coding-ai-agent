@@ -5,6 +5,7 @@ import ChatMarkdown from "./ChatMarkdown";
 import FileTree, { type FileEntry } from "./FileTree";
 import GraphPane from "./GraphPane";
 import TerminalPane from "./TerminalPane";
+import TitleBar from "./TitleBar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
@@ -49,7 +50,7 @@ const monacoBeforeMount: BeforeMount = (monaco) => {
       "scrollbarSlider.hoverBackground": "#8a8a8a99",
       "scrollbarSlider.activeBackground": "#c8c8c8aa",
       "editorWidget.background": "#222222",
-      "editorWidget.border": "#484848",
+      "editorWidget.border": "#2a2a2a",
     },
   });
 };
@@ -212,13 +213,11 @@ export default function Ide() {
   return (
     <TooltipProvider delayDuration={250}>
       <div className="surface-app flex h-screen min-h-0 min-w-0 flex-col overflow-hidden">
+        <TitleBar />
         <ResizablePanelGroup direction="horizontal" className="min-h-0 min-w-0 flex-1">
           <ResizablePanel defaultSize={18} minSize={10} maxSize={32} className="surface-sidebar min-w-0 overflow-hidden">
             <div className="flex h-8 items-center justify-between gap-2 px-3">
-              <div className="flex min-w-0 items-center gap-2">
-                <img src="/patchline-icon.png" alt="" className="size-6 rounded-full" />
-                <span className="truncate text-[12px] font-semibold tracking-tight text-foreground">Patchline</span>
-              </div>
+              <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Explorer</span>
               <ToolBtn label="Open folder" onClick={() => api().pickWorkspace().then(loadTree)}>
                 <FolderOpen className="size-3.5" />
               </ToolBtn>
@@ -227,18 +226,18 @@ export default function Ide() {
               <FileTree entries={tree} onOpen={openFile} activePath={path} />
             </ScrollArea>
           </ResizablePanel>
-          <ResizableHandle className="hairline w-px" />
+          <ResizableHandle className="w-px" />
           <ResizablePanel defaultSize={52} minSize={28} className="surface-editor min-w-0 overflow-hidden">
             <ResizablePanelGroup direction="vertical" className="min-h-0 min-w-0">
               <ResizablePanel defaultSize={78} minSize={30} className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-[var(--editor)]">
-                <div className="surface-chrome flex h-9 min-w-0 shrink-0 items-stretch overflow-hidden border-b">
+                <div className="surface-chrome flex h-9 min-w-0 shrink-0 items-stretch overflow-hidden">
                   <div className="flex min-w-0 flex-1 overflow-x-auto">
                     {openTabs.map((t) => (
                     <button
                       key={t}
                       onClick={() => openFile(t)}
                       className={cn(
-                        "group flex max-w-[180px] shrink-0 items-center gap-1.5 border-r px-3 text-[12.5px]",
+                        "group flex max-w-[180px] shrink-0 items-center gap-1.5 border-r border-border-subtle px-3 text-[12.5px]",
                         t === path && mode !== "diff"
                           ? "bg-[var(--editor)] text-foreground shadow-[0_1px_0_rgba(255,255,255,0.04)_inset]"
                           : "text-muted-foreground hover:text-foreground",
@@ -316,7 +315,7 @@ export default function Ide() {
                     />
                   ) : currentDiff ? (
                     <div className="flex h-full flex-col">
-                      <div className="flex gap-1 overflow-x-auto border-b px-2 py-1">
+                      <div className="flex gap-1 overflow-x-auto border-b border-border-subtle px-2 py-1">
                         {diffs.map((d, i) => (
                           <Button
                             key={d.path}
@@ -348,19 +347,19 @@ export default function Ide() {
                   )}
                 </div>
               </ResizablePanel>
-              <ResizableHandle className="hairline h-px" />
+              <ResizableHandle className="h-px" />
               <ResizablePanel defaultSize={22} minSize={10} className="min-h-0 min-w-0 overflow-hidden bg-[var(--code)]">
-                <div className="border-b px-3 py-1 text-[11px] font-medium text-muted-foreground">Terminal</div>
+                <div className="border-b border-border-subtle px-3 py-1 text-[11px] font-medium text-muted-foreground">Terminal</div>
                 <div className="h-[calc(100%-28px)] min-w-0 overflow-hidden">
                   <TerminalPane />
                 </div>
               </ResizablePanel>
             </ResizablePanelGroup>
           </ResizablePanel>
-          <ResizableHandle className="hairline w-px" />
+          <ResizableHandle className="w-px" />
           <ResizablePanel defaultSize={30} minSize={18} maxSize={48} className="surface-chat flex min-w-0 flex-col overflow-hidden">
             <Tabs defaultValue="chat" className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
-              <div className="flex h-9 items-center border-b px-2">
+              <div className="flex h-9 items-center border-b border-border-subtle px-2">
                 <TabsList className="h-7 bg-transparent">
                   <TabsTrigger value="chat" className="text-[12px]">
                     Chat
@@ -379,7 +378,7 @@ export default function Ide() {
                       </p>
                     ) : null}
                     {plan.length > 0 ? (
-                      <ul className="surface-inset space-y-1.5 rounded-md border p-2">
+                      <ul className="surface-inset space-y-1.5 rounded-md border border-border-subtle p-2">
                         {plan.map((s) => (
                           <li key={s.id} className="flex items-start gap-2 text-xs">
                             <Badge variant={planVariant(s.status)}>{s.status}</Badge>
@@ -412,8 +411,8 @@ export default function Ide() {
                     <div ref={chatEnd} />
                   </div>
                 </ScrollArea>
-                <div className="min-w-0 shrink-0 border-t p-3">
-                  <div className="surface-inset relative min-w-0 rounded-xl border focus-within:border-ring focus-within:shadow-[0_0_0_1px_var(--ring)]">
+                <div className="min-w-0 shrink-0 border-t border-border-subtle p-3">
+                  <div className="surface-inset relative min-w-0 rounded-xl border border-border-subtle focus-within:border-ring focus-within:shadow-[0_0_0_1px_var(--ring)]">
                     <Textarea
                       value={prompt}
                       onChange={(e) => setPrompt(e.target.value)}
