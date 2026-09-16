@@ -41,13 +41,15 @@ const monacoBeforeMount: BeforeMount = (monaco) => {
     ],
     colors: {
       "editor.background": "#1e1e1e",
-      "editor.foreground": "#d4d4d4",
-      "editorLineNumber.foreground": "#6e6e6e",
-      "editor.selectionBackground": "#264f78",
-      "editor.lineHighlightBackground": "#2a2a2a",
+      "editor.foreground": "#f5f5f5",
+      "editorLineNumber.foreground": "#8a8a8a",
+      "editor.selectionBackground": "#3a3018",
+      "editor.lineHighlightBackground": "#262626",
       "scrollbarSlider.background": "#5a5a5a66",
-      "scrollbarSlider.hoverBackground": "#7a7a7a99",
-      "scrollbarSlider.activeBackground": "#9a9a9acc",
+      "scrollbarSlider.hoverBackground": "#8a8a8a99",
+      "scrollbarSlider.activeBackground": "#c8c8c8aa",
+      "editorWidget.background": "#222222",
+      "editorWidget.border": "#484848",
     },
   });
 };
@@ -209,13 +211,13 @@ export default function Ide() {
 
   return (
     <TooltipProvider delayDuration={250}>
-      <div className="flex h-screen min-h-0 min-w-0 flex-col overflow-hidden bg-[#181818] text-zinc-200">
+      <div className="surface-app flex h-screen min-h-0 min-w-0 flex-col overflow-hidden">
         <ResizablePanelGroup direction="horizontal" className="min-h-0 min-w-0 flex-1">
-          <ResizablePanel defaultSize={18} minSize={10} maxSize={32} className="min-w-0 overflow-hidden bg-[#181818]">
+          <ResizablePanel defaultSize={18} minSize={10} maxSize={32} className="surface-sidebar min-w-0 overflow-hidden">
             <div className="flex h-8 items-center justify-between gap-2 px-3">
               <div className="flex min-w-0 items-center gap-2">
                 <img src="/patchline-icon.png" alt="" className="size-6 rounded-full" />
-                <span className="truncate text-[12px] font-semibold tracking-tight text-zinc-200">Patchline</span>
+                <span className="truncate text-[12px] font-semibold tracking-tight text-foreground">Patchline</span>
               </div>
               <ToolBtn label="Open folder" onClick={() => api().pickWorkspace().then(loadTree)}>
                 <FolderOpen className="size-3.5" />
@@ -225,21 +227,21 @@ export default function Ide() {
               <FileTree entries={tree} onOpen={openFile} activePath={path} />
             </ScrollArea>
           </ResizablePanel>
-          <ResizableHandle className="w-px bg-[#2b2b2b]" />
-          <ResizablePanel defaultSize={52} minSize={28} className="min-w-0 overflow-hidden">
+          <ResizableHandle className="hairline w-px" />
+          <ResizablePanel defaultSize={52} minSize={28} className="surface-editor min-w-0 overflow-hidden">
             <ResizablePanelGroup direction="vertical" className="min-h-0 min-w-0">
-              <ResizablePanel defaultSize={78} minSize={30} className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-[#1e1e1e]">
-                <div className="flex h-9 min-w-0 shrink-0 items-stretch overflow-hidden border-b border-[#2b2b2b] bg-[#181818]">
+              <ResizablePanel defaultSize={78} minSize={30} className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-[var(--editor)]">
+                <div className="surface-chrome flex h-9 min-w-0 shrink-0 items-stretch overflow-hidden border-b">
                   <div className="flex min-w-0 flex-1 overflow-x-auto">
                     {openTabs.map((t) => (
                     <button
                       key={t}
                       onClick={() => openFile(t)}
                       className={cn(
-                        "group flex max-w-[180px] shrink-0 items-center gap-1.5 border-r border-[#2b2b2b] px-3 text-[12.5px]",
+                        "group flex max-w-[180px] shrink-0 items-center gap-1.5 border-r px-3 text-[12.5px]",
                         t === path && mode !== "diff"
-                          ? "bg-[#1e1e1e] text-zinc-100"
-                          : "bg-[#181818] text-zinc-500 hover:text-zinc-300",
+                          ? "bg-[var(--editor)] text-foreground shadow-[0_1px_0_rgba(255,255,255,0.04)_inset]"
+                          : "text-muted-foreground hover:text-foreground",
                       )}
                     >
                       <FileTypeIcon name={t.split("/").pop() || t} />
@@ -262,11 +264,11 @@ export default function Ide() {
                       <RotateCcw className="size-3.5" />
                     </ToolBtn>
                     {isMarkdown(path) && mode !== "diff" ? (
-                      <div className="mr-1 flex rounded-md bg-[#2a2a2a] p-0.5">
+                      <div className="surface-inset mr-1 flex rounded-md p-0.5">
                         <Button
                           size="sm"
                           variant="ghost"
-                          className={cn("h-6 gap-1 px-2 text-[11px]", mode === "preview" && "bg-[#1e1e1e] text-zinc-100")}
+                          className={cn("h-6 gap-1 px-2 text-[11px]", mode === "preview" && "bg-card text-foreground shadow-[var(--elev-raised)]")}
                           onClick={() => setMode("preview")}
                         >
                           <BookOpen className="size-3" />
@@ -275,7 +277,7 @@ export default function Ide() {
                         <Button
                           size="sm"
                           variant="ghost"
-                          className={cn("h-6 gap-1 px-2 text-[11px]", mode === "edit" && "bg-[#1e1e1e] text-zinc-100")}
+                          className={cn("h-6 gap-1 px-2 text-[11px]", mode === "edit" && "bg-card text-foreground shadow-[var(--elev-raised)]")}
                           onClick={() => setMode("edit")}
                         >
                           <Code2 className="size-3" />
@@ -297,7 +299,7 @@ export default function Ide() {
                   {mode === "preview" ? (
                     <ScrollArea className="h-full min-w-0">
                       <article className="mx-auto max-w-3xl min-w-0 px-6 py-8 sm:px-8">
-                        <p className="mb-6 text-[11px] uppercase tracking-wider text-zinc-500">Preview · {fileName}</p>
+                        <p className="mb-6 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Preview · {fileName}</p>
                         <ChatMarkdown text={content} className="space-y-4 text-[14px] leading-7" />
                       </article>
                     </ScrollArea>
@@ -314,7 +316,7 @@ export default function Ide() {
                     />
                   ) : currentDiff ? (
                     <div className="flex h-full flex-col">
-                      <div className="flex gap-1 overflow-x-auto border-b border-[#2b2b2b] px-2 py-1">
+                      <div className="flex gap-1 overflow-x-auto border-b px-2 py-1">
                         {diffs.map((d, i) => (
                           <Button
                             key={d.path}
@@ -340,25 +342,25 @@ export default function Ide() {
                       </div>
                     </div>
                   ) : (
-                    <div className="flex h-full items-center justify-center text-sm text-zinc-500">
+                    <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
                       No uncommitted diffs
                     </div>
                   )}
                 </div>
               </ResizablePanel>
-              <ResizableHandle className="h-px bg-[#2b2b2b]" />
-              <ResizablePanel defaultSize={22} minSize={10} className="min-h-0 min-w-0 overflow-hidden bg-[#1e1e1e]">
-                <div className="border-b border-[#2b2b2b] px-3 py-1 text-[11px] text-zinc-500">Terminal</div>
+              <ResizableHandle className="hairline h-px" />
+              <ResizablePanel defaultSize={22} minSize={10} className="min-h-0 min-w-0 overflow-hidden bg-[var(--code)]">
+                <div className="border-b px-3 py-1 text-[11px] font-medium text-muted-foreground">Terminal</div>
                 <div className="h-[calc(100%-28px)] min-w-0 overflow-hidden">
                   <TerminalPane />
                 </div>
               </ResizablePanel>
             </ResizablePanelGroup>
           </ResizablePanel>
-          <ResizableHandle className="w-px bg-[#2b2b2b]" />
-          <ResizablePanel defaultSize={30} minSize={18} maxSize={48} className="flex min-w-0 flex-col overflow-hidden bg-[#1a1a1a]">
+          <ResizableHandle className="hairline w-px" />
+          <ResizablePanel defaultSize={30} minSize={18} maxSize={48} className="surface-chat flex min-w-0 flex-col overflow-hidden">
             <Tabs defaultValue="chat" className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
-              <div className="flex h-9 items-center border-b border-[#2b2b2b] px-2">
+              <div className="flex h-9 items-center border-b px-2">
                 <TabsList className="h-7 bg-transparent">
                   <TabsTrigger value="chat" className="text-[12px]">
                     Chat
@@ -372,22 +374,22 @@ export default function Ide() {
                 <ScrollArea className="min-h-0 min-w-0 flex-1">
                   <div className="min-w-0 max-w-full space-y-3 overflow-hidden px-3 py-3">
                     {fileName ? (
-                      <p className="text-[11px] text-zinc-500">
-                        Context · <span className="font-mono text-zinc-400">{fileName}</span>
+                      <p className="text-[11px] text-muted-foreground">
+                        Context · <span className="font-mono text-info">{fileName}</span>
                       </p>
                     ) : null}
                     {plan.length > 0 ? (
-                      <ul className="space-y-1.5 rounded-md border border-[#2b2b2b] bg-[#141414] p-2">
+                      <ul className="surface-inset space-y-1.5 rounded-md border p-2">
                         {plan.map((s) => (
                           <li key={s.id} className="flex items-start gap-2 text-xs">
                             <Badge variant={planVariant(s.status)}>{s.status}</Badge>
-                            <span className="leading-5 text-zinc-300">{s.text}</span>
+                            <span className="leading-5 text-foreground">{s.text}</span>
                           </li>
                         ))}
                       </ul>
                     ) : null}
                     {log.length === 0 ? (
-                      <p className="text-sm leading-6 text-zinc-500">
+                      <p className="text-sm leading-6 text-muted-foreground">
                         Ask the coding agent about this workspace. Retrieval uses the code graph on the Graph tab.
                       </p>
                     ) : (
@@ -396,10 +398,11 @@ export default function Ide() {
                           key={m.id}
                           className={cn(
                             "min-w-0 max-w-full overflow-hidden px-1 py-1 text-[13px] leading-6",
-                            m.role === "user" && "ml-4 rounded-2xl bg-[#2a2a2a] px-3 py-2 text-zinc-100 [overflow-wrap:anywhere]",
+                            m.role === "user" &&
+                              "ml-4 rounded-2xl bg-secondary px-3 py-2 text-secondary-foreground shadow-[var(--elev-raised)] [overflow-wrap:anywhere]",
                             m.role === "assistant" && "mr-0",
-                            m.role === "tool" && "break-all font-mono text-[11px] text-zinc-500",
-                            m.role === "error" && "text-red-400",
+                            m.role === "tool" && "break-all font-mono text-[11px] text-info",
+                            m.role === "error" && "text-destructive",
                           )}
                         >
                           {m.role === "assistant" ? <ChatMarkdown text={m.text} /> : m.text}
@@ -409,8 +412,8 @@ export default function Ide() {
                     <div ref={chatEnd} />
                   </div>
                 </ScrollArea>
-                <div className="min-w-0 shrink-0 border-t border-[#2b2b2b] p-3">
-                  <div className="relative min-w-0 rounded-xl border border-[#333] bg-[#141414] focus-within:border-zinc-500">
+                <div className="min-w-0 shrink-0 border-t p-3">
+                  <div className="surface-inset relative min-w-0 rounded-xl border focus-within:border-ring focus-within:shadow-[0_0_0_1px_var(--ring)]">
                     <Textarea
                       value={prompt}
                       onChange={(e) => setPrompt(e.target.value)}
@@ -462,7 +465,7 @@ function ToolBtn({
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <Button variant="ghost" size="icon" className="h-7 w-7 text-zinc-500 hover:text-zinc-200" onClick={onClick}>
+        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={onClick}>
           {children}
         </Button>
       </TooltipTrigger>

@@ -16,9 +16,9 @@ export default function TerminalPane() {
         fontFamily: '"IBM Plex Mono", ui-monospace, monospace',
         theme: {
           background: "#1e1e1e",
-          foreground: "#d4d4d4",
-          cursor: "#d4d4d4",
-          selectionBackground: "#264f78",
+          foreground: "#f5f5f5",
+          cursor: "#f0c14b",
+          selectionBackground: "#3a3018",
         },
         scrollback: 2000,
       });

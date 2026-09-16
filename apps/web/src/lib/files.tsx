@@ -1,12 +1,18 @@
-import type { IconType } from "react-icons";
+import type { LucideIcon } from "lucide-react";
 import {
-  VscFile,
-  VscFolder,
-  VscFolderOpened,
-  VscJson,
-  VscTerminalPowershell,
-} from "react-icons/vsc";
-import { FaFileImage } from "react-icons/fa";
+  BookOpen,
+  File,
+  FileCode,
+  FileText,
+  Image as ImageIcon,
+  KeyRound,
+  Lock,
+  Scale,
+  Settings,
+  Terminal,
+} from "lucide-react";
+import type { IconType } from "react-icons";
+import { VscJson, VscTerminalPowershell } from "react-icons/vsc";
 import {
   SiCss,
   SiDocker,
@@ -61,68 +67,105 @@ export function monacoLanguage(path: string): string {
     sql: "sql",
     xml: "xml",
     svg: "xml",
+    ini: "ini",
+    env: "ini",
   };
   return map[ext] || "plaintext";
 }
 
-const SIZE = 15;
+const SIZE = 14;
 
-export function FolderIcon({ open }: { open: boolean }) {
-  const Icon = open ? VscFolderOpened : VscFolder;
-  return <Icon size={SIZE} color="#dcb67a" className="shrink-0" />;
-}
+type Brand = { kind: "brand"; Icon: IconType; color: string };
+type Glyph = { kind: "glyph"; Icon: LucideIcon; color: string };
+type Pick = Brand | Glyph;
 
 export function FileTypeIcon({ name }: { name: string }) {
-  const { Icon, color } = pickIcon(name.toLowerCase());
-  return <Icon size={SIZE} color={color} className="shrink-0" />;
+  const p = pickIcon(name.toLowerCase());
+  if (p.kind === "brand") {
+    return <p.Icon size={SIZE} color={p.color} className="shrink-0" />;
+  }
+  return <p.Icon size={SIZE} color={p.color} strokeWidth={1.75} className="shrink-0" />;
 }
 
-function pickIcon(lower: string): { Icon: IconType; color: string } {
-  if (lower === "dockerfile" || lower.startsWith("docker-compose")) return { Icon: SiDocker, color: "#2496ED" };
-  if (lower === ".gitignore" || lower === ".gitattributes") return { Icon: SiGit, color: "#F05032" };
-  if (lower.startsWith(".env")) return { Icon: VscFile, color: "#16a34a" };
-  if (lower === "license" || lower.startsWith("license.")) return { Icon: VscFile, color: "#a1a1aa" };
-  if (lower === "package.json" || lower === "package-lock.json") return { Icon: SiNpm, color: "#CB3837" };
-  if (lower === "pnpm-lock.yaml" || lower === "pnpm-workspace.yaml") return { Icon: SiPnpm, color: "#F69220" };
-  if (lower.startsWith("tsconfig")) return { Icon: SiTypescript, color: "#3178C6" };
-  if (lower.startsWith("vite.config")) return { Icon: SiVite, color: "#646CFF" };
-  if (lower.startsWith("next.config")) return { Icon: SiNextdotjs, color: "#fff" };
-  if (lower.includes("tailwind")) return { Icon: SiTailwindcss, color: "#06B6D4" };
+function brand(Icon: IconType, color: string): Brand {
+  return { kind: "brand", Icon, color };
+}
+
+function glyph(Icon: LucideIcon, color: string): Glyph {
+  return { kind: "glyph", Icon, color };
+}
+
+function pickIcon(lower: string): Pick {
+  if (lower === "dockerfile" || lower.startsWith("docker-compose")) return brand(SiDocker, "#2496ED");
+  if (lower === ".gitignore" || lower === ".gitattributes" || lower === ".gitmodules") return brand(SiGit, "#F05032");
+  if (lower === "license" || lower.startsWith("license.")) return glyph(Scale, "#c8c8c8");
+  if (lower === "readme.md" || lower === "readme") return glyph(BookOpen, "#f0c14b");
+  if (lower === "package.json" || lower === "package-lock.json") return brand(SiNpm, "#CB3837");
+  if (lower === "pnpm-lock.yaml" || lower === "pnpm-workspace.yaml") return brand(SiPnpm, "#F69220");
+  if (lower.startsWith("tsconfig")) return brand(SiTypescript, "#3178C6");
+  if (lower.startsWith("vite.config")) return brand(SiVite, "#646CFF");
+  if (lower.startsWith("next.config")) return brand(SiNextdotjs, "#fff");
+  if (lower.includes("tailwind")) return brand(SiTailwindcss, "#06B6D4");
   if (lower === "pytest.ini" || lower.startsWith("test_") || lower.startsWith("conftest")) {
-    return { Icon: SiPytest, color: "#0A9EDC" };
+    return brand(SiPytest, "#0A9EDC");
   }
-  if (lower === "requirements.txt" || lower === "pyproject.toml") return { Icon: SiPython, color: "#3776AB" };
+  if (lower === "requirements.txt" || lower === "pyproject.toml") return brand(SiPython, "#3776AB");
+  if (lower.startsWith(".env") || lower.endsWith(".env") || lower.includes(".env.")) {
+    return glyph(Settings, "#f0c14b");
+  }
+  if (lower.includes("secret") || lower.includes("credential") || lower.endsWith(".pem") || lower.endsWith(".key")) {
+    return glyph(KeyRound, "#f0c14b");
+  }
+  if (lower.endsWith(".lock") || lower.includes("-lock.") || lower.includes("lock.json") || lower.includes("lock.yaml")) {
+    return glyph(Lock, "#a3a3a3");
+  }
+  if (
+    lower.includes("eslint") ||
+    lower.includes("prettier") ||
+    lower.includes("editorconfig") ||
+    /\.(ini|conf|cfg)$/.test(lower) ||
+    /\.config\.(js|cjs|mjs|ts)$/.test(lower) ||
+    /(^|\.)[\w-]*rc$/.test(lower.replace(/\.(json|ya?ml|js|cjs|mjs)$/, ""))
+  ) {
+    return glyph(Settings, "#c8c8c8");
+  }
 
   const ext = lower.includes(".") ? lower.slice(lower.lastIndexOf(".") + 1) : "";
-  const byExt: Record<string, { Icon: IconType; color: string }> = {
-    ts: { Icon: SiTypescript, color: "#3178C6" },
-    mts: { Icon: SiTypescript, color: "#3178C6" },
-    cts: { Icon: SiTypescript, color: "#3178C6" },
-    tsx: { Icon: SiReact, color: "#61DAFB" },
-    jsx: { Icon: SiReact, color: "#61DAFB" },
-    js: { Icon: SiJavascript, color: "#F7DF1E" },
-    mjs: { Icon: SiJavascript, color: "#F7DF1E" },
-    cjs: { Icon: SiJavascript, color: "#F7DF1E" },
-    py: { Icon: SiPython, color: "#3776AB" },
-    json: { Icon: VscJson, color: "#cbcb41" },
-    md: { Icon: SiMarkdown, color: "#519aba" },
-    css: { Icon: SiCss, color: "#1572B6" },
-    html: { Icon: SiHtml5, color: "#E34F26" },
-    yml: { Icon: SiYaml, color: "#CB171E" },
-    yaml: { Icon: SiYaml, color: "#CB171E" },
-    toml: { Icon: SiToml, color: "#9C4221" },
-    rs: { Icon: SiRust, color: "#DEA584" },
-    go: { Icon: SiGo, color: "#00ADD8" },
-    sql: { Icon: SiSqlite, color: "#003B57" },
-    svg: { Icon: SiSvg, color: "#FFB13B" },
-    png: { Icon: FaFileImage, color: "#a78bfa" },
-    jpg: { Icon: FaFileImage, color: "#a78bfa" },
-    jpeg: { Icon: FaFileImage, color: "#a78bfa" },
-    gif: { Icon: FaFileImage, color: "#a78bfa" },
-    webp: { Icon: FaFileImage, color: "#a78bfa" },
-    ps1: { Icon: VscTerminalPowershell, color: "#5391FE" },
-    sh: { Icon: VscFile, color: "#4ade80" },
-    bash: { Icon: VscFile, color: "#4ade80" },
+  const byExt: Record<string, Pick> = {
+    ts: brand(SiTypescript, "#3178C6"),
+    mts: brand(SiTypescript, "#3178C6"),
+    cts: brand(SiTypescript, "#3178C6"),
+    tsx: brand(SiReact, "#61DAFB"),
+    jsx: brand(SiReact, "#61DAFB"),
+    js: brand(SiJavascript, "#F7DF1E"),
+    mjs: brand(SiJavascript, "#F7DF1E"),
+    cjs: brand(SiJavascript, "#F7DF1E"),
+    py: brand(SiPython, "#3776AB"),
+    json: brand(VscJson, "#cbcb41"),
+    md: brand(SiMarkdown, "#519aba"),
+    css: brand(SiCss, "#1572B6"),
+    scss: brand(SiCss, "#C6538C"),
+    html: brand(SiHtml5, "#E34F26"),
+    yml: brand(SiYaml, "#CB171E"),
+    yaml: brand(SiYaml, "#CB171E"),
+    toml: brand(SiToml, "#9C4221"),
+    rs: brand(SiRust, "#DEA584"),
+    go: brand(SiGo, "#00ADD8"),
+    sql: brand(SiSqlite, "#0ea5e9"),
+    svg: brand(SiSvg, "#FFB13B"),
+    png: glyph(ImageIcon, "#c4b5fd"),
+    jpg: glyph(ImageIcon, "#c4b5fd"),
+    jpeg: glyph(ImageIcon, "#c4b5fd"),
+    gif: glyph(ImageIcon, "#c4b5fd"),
+    webp: glyph(ImageIcon, "#c4b5fd"),
+    ico: glyph(ImageIcon, "#c4b5fd"),
+    ps1: brand(VscTerminalPowershell, "#5391FE"),
+    sh: glyph(Terminal, "#5ee0a0"),
+    bash: glyph(Terminal, "#5ee0a0"),
+    zsh: glyph(Terminal, "#5ee0a0"),
+    txt: glyph(FileText, "#c8c8c8"),
+    log: glyph(FileText, "#a3a3a3"),
+    xml: glyph(FileCode, "#e8a87c"),
   };
-  return byExt[ext] || { Icon: VscFile, color: "#8b8b8b" };
+  return byExt[ext] || glyph(File, "#8a8a8a");
 }

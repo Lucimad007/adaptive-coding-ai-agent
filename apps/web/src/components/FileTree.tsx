@@ -2,7 +2,7 @@ import { ChevronRight } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { FileTypeIcon, FolderIcon } from "@/lib/files";
+import { FileTypeIcon } from "@/lib/files";
 
 export type FileEntry = {
   path: string;
@@ -35,8 +35,8 @@ export default function FileTree({
             size="sm"
             onClick={() => onOpen(e.path)}
             className={cn(
-              "h-6 w-full justify-start gap-1.5 rounded-none px-2 text-[12.5px] font-normal text-zinc-400 hover:bg-white/5 hover:text-zinc-100",
-              activePath === e.path && "bg-white/8 text-zinc-100",
+              "h-6 w-full justify-start gap-1.5 rounded-none px-2 text-[12.5px] font-normal text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+              activePath === e.path && "bg-accent text-accent-foreground shadow-[0_1px_0_rgba(255,255,255,0.04)_inset]",
             )}
             style={{ paddingLeft: 8 + depth * 12 }}
           >
@@ -67,11 +67,10 @@ function DirNode({
         variant="ghost"
         size="sm"
         onClick={() => setOpen((v) => !v)}
-        className="h-6 w-full justify-start gap-1 rounded-none px-2 text-[12.5px] font-normal text-zinc-400 hover:bg-white/5 hover:text-zinc-100"
+        className="h-6 w-full justify-start gap-1 rounded-none px-2 text-[12.5px] font-normal text-muted-foreground hover:bg-accent hover:text-accent-foreground"
         style={{ paddingLeft: 8 + depth * 12 }}
       >
-        <ChevronRight className={cn("size-3 shrink-0 text-zinc-600 transition-transform", open && "rotate-90")} />
-        <FolderIcon open={open} />
+        <ChevronRight className={cn("size-3 shrink-0 text-muted-foreground/80 transition-transform", open && "rotate-90")} />
         <span className="truncate">{entry.name}</span>
       </Button>
       {open ? (

@@ -22,28 +22,52 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-code: var(--code);
+  --shadow-raised: var(--elev-raised);
+  --shadow-inset: var(--elev-inset);
+  --shadow-float: var(--elev-float);
 }
 
 :root {
-  --background: #111113;
-  --foreground: #ececec;
-  --card: #18181b;
-  --card-foreground: #ececec;
-  --popover: #18181b;
-  --popover-foreground: #ececec;
-  --primary: #e4e4e7;
-  --primary-foreground: #111113;
-  --secondary: #27272a;
-  --secondary-foreground: #fafafa;
-  --muted: #1f1f23;
-  --muted-foreground: #a1a1aa;
-  --accent: #27272a;
-  --accent-foreground: #fafafa;
-  --destructive: #7f1d1d;
-  --destructive-foreground: #fecaca;
-  --border: #2a2a2e;
-  --input: #2a2a2e;
-  --ring: #71717a;
+  /* Neural charcoal: lifted grays, no blue cast. Body ~13:1, muted ~8:1. */
+  --background: #161616;
+  --foreground: #f5f5f5;
+  --card: #222222;
+  --card-foreground: #f5f5f5;
+  --popover: #2a2a2a;
+  --popover-foreground: #f5f5f5;
+  --primary: #f0c14b;
+  --primary-foreground: #14100a;
+  --secondary: #2c2c2c;
+  --secondary-foreground: #f0f0f0;
+  --muted: #262626;
+  --muted-foreground: #c8c8c8;
+  --accent: #2e2e2e;
+  --accent-foreground: #f5f5f5;
+  --destructive: #ff6b6b;
+  --destructive-foreground: #1a0808;
+  --border: #484848;
+  --input: #484848;
+  --ring: #f0c14b;
+  --success: #5ee0a0;
+  --success-foreground: #04140c;
+  --warning: #f0c14b;
+  --warning-foreground: #14100a;
+  --info: #ececec;
+  --info-foreground: #1a1a1a;
+  --code: #121212;
+  --sidebar: #1a1a1a;
+  --editor: #1e1e1e;
+  --chat: #1c1c1c;
+  --elev-raised: 0 1px 0 rgba(255, 255, 255, 0.07) inset, 0 10px 28px rgba(0, 0, 0, 0.45);
+  --elev-inset: inset 0 1px 2px rgba(0, 0, 0, 0.45), inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+  --elev-float: 0 12px 36px rgba(0, 0, 0, 0.4), 0 1px 0 rgba(255, 255, 255, 0.06) inset;
 }
 
 html,
@@ -65,7 +89,7 @@ body {
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: #5a5a5a transparent;
+  scrollbar-color: #6a6a6a transparent;
 }
 
 *::-webkit-scrollbar {
@@ -82,14 +106,55 @@ body {
   border-radius: 999px;
   border: 2px solid transparent;
   background-clip: padding-box;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
 }
 
 *::-webkit-scrollbar-thumb:hover {
-  background-color: #6b6b6b;
+  background-color: #7a7a7a;
   border: 2px solid transparent;
   background-clip: padding-box;
 }
 
 *::-webkit-scrollbar-corner {
   background: transparent;
+}
+
+.surface-app {
+  background: var(--background);
+  color: var(--foreground);
+}
+
+.surface-sidebar {
+  background: var(--sidebar);
+  box-shadow: var(--elev-inset);
+}
+
+.surface-editor {
+  background: var(--editor);
+  box-shadow: var(--elev-raised);
+}
+
+.surface-chat {
+  background: var(--chat);
+  box-shadow: -12px 0 28px rgba(0, 0, 0, 0.28);
+}
+
+.surface-chrome {
+  background: color-mix(in srgb, var(--sidebar) 88%, #000);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.05) inset, 0 8px 16px rgba(0, 0, 0, 0.25);
+}
+
+.surface-inset {
+  background: var(--muted);
+  box-shadow: var(--elev-inset);
+}
+
+.surface-code {
+  background: var(--code);
+  box-shadow: var(--elev-inset);
+  border-color: var(--border);
+}
+
+.hairline {
+  background: var(--border);
 }

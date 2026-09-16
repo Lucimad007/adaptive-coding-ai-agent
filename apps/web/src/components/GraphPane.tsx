@@ -24,13 +24,13 @@ export default function GraphPane({
       const nodes = (payload.nodes as Node[]).slice(0, 80).map((n) => ({
         id: n.id,
         label: n.label || n.id,
-        font: { color: "#d4d4d8", size: 11, face: "IBM Plex Sans" },
+        font: { color: "#f5f5f5", size: 11, face: "IBM Plex Sans" },
         color:
           n.id === payload.anchorId
-            ? { background: "#f59e0b", border: "#fbbf24" }
+            ? { background: "#f0c14b", border: "#f5d98a" }
             : walk.has(n.id)
-              ? { background: "#3f3f46", border: "#a1a1aa" }
-              : { background: "#27272a", border: "#3f3f46" },
+              ? { background: "#333333", border: "#f0c14b" }
+              : { background: "#262626", border: "#484848" },
         shape: (n.kind === "file" ? "box" : "dot") as const,
       }));
       const idSet = new Set(nodes.map((n) => n.id));
@@ -42,7 +42,7 @@ export default function GraphPane({
           from: e.source,
           to: e.target,
           arrows: "to",
-          color: { color: e.kind === "call" ? "#fb7185" : "#52525b" },
+          color: { color: e.kind === "call" ? "#ff6b6b" : "#7a7a7a" },
         }));
       network = new vis.Network(ref.current!, { nodes, edges }, {
         physics: false,
@@ -52,5 +52,5 @@ export default function GraphPane({
     return () => network?.destroy();
   }, [payload]);
 
-  return <div ref={ref} className="h-full min-h-[160px] w-full min-w-0 overflow-hidden bg-[#1e1e1e]" />;
+  return <div ref={ref} className="h-full min-h-[160px] w-full min-w-0 overflow-hidden bg-[var(--editor)]" />;
 }
