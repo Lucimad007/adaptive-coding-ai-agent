@@ -44,6 +44,9 @@ const monacoBeforeMount: BeforeMount = (monaco) => {
       "editorLineNumber.foreground": "#6e6e6e",
       "editor.selectionBackground": "#264f78",
       "editor.lineHighlightBackground": "#2a2a2a",
+      "scrollbarSlider.background": "#5a5a5a66",
+      "scrollbarSlider.hoverBackground": "#7a7a7a99",
+      "scrollbarSlider.activeBackground": "#9a9a9acc",
     },
   });
 };
@@ -58,6 +61,12 @@ const editorOptions = {
   scrollBeyondLastLine: false,
   bracketPairColorization: { enabled: true },
   renderLineHighlight: "line" as const,
+  scrollbar: {
+    verticalScrollbarSize: 10,
+    horizontalScrollbarSize: 10,
+    verticalSliderSize: 6,
+    horizontalSliderSize: 6,
+  },
 };
 
 export default function Ide() {

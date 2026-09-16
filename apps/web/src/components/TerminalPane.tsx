@@ -20,6 +20,7 @@ export default function TerminalPane() {
           cursor: "#d4d4d4",
           selectionBackground: "#264f78",
         },
+        scrollback: 2000,
       });
       t.open(ref.current!);
       term = t;
