@@ -1,13 +1,6 @@
-import { useEffect, useState, type ReactNode } from "react";
-import Editor, { DiffEditor } from "@monaco-editor/react";
-import {
-  FolderOpen,
-  GitCompare,
-  Play,
-  RotateCcw,
-  Save,
-  Square,
-} from "lucide-react";
+import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import Editor, { DiffEditor, type BeforeMount } from "@monaco-editor/react";
+import { ArrowUp, FolderOpen, GitCompare, RotateCcw, Save, Square, X } from "lucide-react";
 import FileTree, { type FileEntry } from "./FileTree";
 import GraphPane from "./GraphPane";
 import TerminalPane from "./TerminalPane";
@@ -15,12 +8,14 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { FileTypeIcon, monacoLanguage } from "@/lib/files";
+import { cn } from "@/lib/utils";
 
 type PlanStep = { id: string; text: string; status: string };
+type ChatMsg = { id: string; role: "user" | "assistant" | "tool" | "error"; text: string };
 
 function api() {
   return window.harness;
@@ -32,12 +27,46 @@ function planVariant(status: string) {
   return "pending" as const;
 }
 
+const monacoBeforeMount: BeforeMount = (monaco) => {
+  monaco.editor.defineTheme("harness-dark", {
+    base: "vs-dark",
+    inherit: true,
+    rules: [
+      { token: "comment", foreground: "6A9955" },
+      { token: "string", foreground: "CE9178" },
+      { token: "keyword", foreground: "C586C0" },
+      { token: "number", foreground: "B5CEA8" },
+      { token: "type", foreground: "4EC9B0" },
+    ],
+    colors: {
+      "editor.background": "#1e1e1e",
+      "editor.foreground": "#d4d4d4",
+      "editorLineNumber.foreground": "#6e6e6e",
+      "editor.selectionBackground": "#264f78",
+      "editor.lineHighlightBackground": "#2a2a2a",
+    },
+  });
+};
+
+const editorOptions = {
+  fontFamily: "IBM Plex Mono, Cascadia Code, Consolas, monospace",
+  fontSize: 13,
+  lineHeight: 20,
+  minimap: { enabled: false },
+  padding: { top: 8 },
+  automaticLayout: true,
+  scrollBeyondLastLine: false,
+  bracketPairColorization: { enabled: true },
+  renderLineHighlight: "line" as const,
+};
+
 export default function Ide() {
   const [tree, setTree] = useState<FileEntry[]>([]);
+  const [openTabs, setOpenTabs] = useState<string[]>(["README.md"]);
   const [path, setPath] = useState("README.md");
   const [content, setContent] = useState("");
-  const [prompt, setPrompt] = useState("Add a docstring to get_feed in fixtures/sample_codebase/app.py");
-  const [log, setLog] = useState<string[]>([]);
+  const [prompt, setPrompt] = useState("");
+  const [log, setLog] = useState<ChatMsg[]>([]);
   const [plan, setPlan] = useState<PlanStep[]>([]);
   const [graph, setGraph] = useState<{
     nodes: unknown[];
@@ -47,7 +76,9 @@ export default function Ide() {
   } | null>(null);
   const [diffs, setDiffs] = useState<{ path: string; before: string; after: string }[]>([]);
   const [diffIdx, setDiffIdx] = useState(0);
-  const [tab, setTab] = useState<"edit" | "diff">("edit");
+  const [mode, setMode] = useState<"edit" | "diff">("edit");
+  const chatEnd = useRef<HTMLDivElement>(null);
+  const lang = monacoLanguage(mode === "diff" && diffs[diffIdx] ? diffs[diffIdx].path : path);
 
   async function loadTree() {
     const data = await api().tree();
@@ -58,7 +89,17 @@ export default function Ide() {
     const data = await api().read(rel);
     setPath(rel);
     setContent(data.content ?? "");
-    setTab("edit");
+    setMode("edit");
+    setOpenTabs((tabs) => (tabs.includes(rel) ? tabs : [...tabs, rel]));
+  }
+
+  function closeTab(rel: string, e: MouseEvent) {
+    e.stopPropagation();
+    setOpenTabs((tabs) => {
+      const next = tabs.filter((t) => t !== rel);
+      if (rel === path && next.length) openFile(next[next.length - 1]);
+      return next;
+    });
   }
 
   async function save() {
@@ -69,7 +110,7 @@ export default function Ide() {
     const data = await api().diffs();
     setDiffs(data.diffs || []);
     setDiffIdx(0);
-    if (data.diffs?.length) setTab("diff");
+    if (data.diffs?.length) setMode("diff");
   }
 
   async function loadGraph(q: string) {
@@ -83,11 +124,21 @@ export default function Ide() {
   }
 
   function runAgent() {
-    loadGraph(prompt).catch(() => undefined);
+    const text = prompt.trim();
+    if (!text) return;
+    setLog((l) => [...l, { id: crypto.randomUUID(), role: "user", text }]);
+    setPrompt("");
+    loadGraph(text).catch(() => undefined);
     const off = api().onAgentEvent((ev) => {
-      if (ev.type === "token") setLog((l) => [...l, String(ev.text)]);
-      if (ev.type === "tool") setLog((l) => [...l, `tool ${ev.name}`]);
-      if (ev.type === "error") setLog((l) => [...l, `error ${ev.message}`]);
+      if (ev.type === "token") {
+        setLog((l) => [...l, { id: crypto.randomUUID(), role: "assistant", text: String(ev.text) }]);
+      }
+      if (ev.type === "tool") {
+        setLog((l) => [...l, { id: crypto.randomUUID(), role: "tool", text: `tool ${ev.name}` }]);
+      }
+      if (ev.type === "error") {
+        setLog((l) => [...l, { id: crypto.randomUUID(), role: "error", text: String(ev.message) }]);
+      }
       if (ev.type === "plan") setPlan((ev.steps as PlanStep[]) || []);
       if (ev.type === "graph") {
         setGraph({
@@ -102,7 +153,7 @@ export default function Ide() {
         off();
       }
     });
-    api().startAgent(prompt);
+    api().startAgent(text);
   }
 
   async function reject() {
@@ -114,166 +165,219 @@ export default function Ide() {
     if (!window.harness) return;
     loadTree();
     openFile("README.md").catch(() => undefined);
-    loadGraph(prompt).catch(() => undefined);
     const off = api().onAgentEvent(() => undefined);
     return () => off();
   }, []);
 
+  useEffect(() => {
+    chatEnd.current?.scrollIntoView({ behavior: "smooth" });
+  }, [log]);
+
   const currentDiff = diffs[diffIdx];
+  const fileName = path.split("/").pop() || path;
 
   return (
     <TooltipProvider delayDuration={250}>
-      <div className="flex h-screen flex-col overflow-hidden bg-background">
-        <header className="flex h-11 shrink-0 items-center gap-2 border-b px-3">
-          <span className="text-[13px] font-medium tracking-tight">Harness</span>
-          <Separator orientation="vertical" className="h-4" />
-          <span className="truncate font-mono text-xs text-muted-foreground">{path}</span>
-          <div className="ml-auto flex items-center gap-1">
-            <ToolBtn label="Open folder" onClick={() => api().pickWorkspace().then(loadTree)}>
-              <FolderOpen />
-            </ToolBtn>
-            <ToolBtn label="Save" onClick={save}>
-              <Save />
-            </ToolBtn>
-            <ToolBtn label="Reload diffs" onClick={loadDiffs}>
-              <GitCompare />
-            </ToolBtn>
-            <ToolBtn label="Reject writes" onClick={reject}>
-              <RotateCcw />
-            </ToolBtn>
-            <Separator orientation="vertical" className="mx-1 h-4" />
-            <Tabs value={tab} onValueChange={(v) => setTab(v as "edit" | "diff")}>
-              <TabsList>
-                <TabsTrigger value="edit">Edit</TabsTrigger>
-                <TabsTrigger value="diff">Review{diffs.length ? ` (${diffs.length})` : ""}</TabsTrigger>
-              </TabsList>
-            </Tabs>
-          </div>
-        </header>
-
-        <ResizablePanelGroup direction="vertical" className="flex-1">
-          <ResizablePanel defaultSize={78} minSize={40}>
-            <ResizablePanelGroup direction="horizontal">
-              <ResizablePanel defaultSize={18} minSize={12} className="bg-card/40">
-                <div className="px-3 py-2 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                  Explorer
-                </div>
-                <ScrollArea className="h-[calc(100%-2rem)]">
-                  <FileTree entries={tree} onOpen={openFile} activePath={path} />
-                </ScrollArea>
-              </ResizablePanel>
-              <ResizableHandle />
-              <ResizablePanel defaultSize={54} minSize={30}>
-                <ResizablePanelGroup direction="vertical">
-                  <ResizablePanel defaultSize={68} minSize={30}>
-                    {tab === "edit" ? (
-                      <Editor
-                        height="100%"
-                        theme="vs-dark"
-                        path={path}
-                        value={content}
-                        onChange={(v) => setContent(v || "")}
-                        options={{ fontFamily: "IBM Plex Mono", fontSize: 13, minimap: { enabled: false }, padding: { top: 8 } }}
+      <div className="flex h-screen flex-col overflow-hidden bg-[#181818] text-zinc-200">
+        <ResizablePanelGroup direction="horizontal" className="flex-1">
+          <ResizablePanel defaultSize={16} minSize={12} className="bg-[#181818]">
+            <div className="flex h-8 items-center justify-between px-3">
+              <span className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">Explorer</span>
+              <ToolBtn label="Open folder" onClick={() => api().pickWorkspace().then(loadTree)}>
+                <FolderOpen className="size-3.5" />
+              </ToolBtn>
+            </div>
+            <ScrollArea className="h-[calc(100%-2rem)]">
+              <FileTree entries={tree} onOpen={openFile} activePath={path} />
+            </ScrollArea>
+          </ResizablePanel>
+          <ResizableHandle className="w-px bg-[#2b2b2b]" />
+          <ResizablePanel defaultSize={56} minSize={30}>
+            <ResizablePanelGroup direction="vertical">
+              <ResizablePanel defaultSize={78} minSize={40} className="flex flex-col bg-[#1e1e1e]">
+                <div className="flex h-9 shrink-0 items-stretch border-b border-[#2b2b2b] bg-[#181818]">
+                  {openTabs.map((t) => (
+                    <button
+                      key={t}
+                      onClick={() => openFile(t)}
+                      className={cn(
+                        "group flex max-w-[180px] items-center gap-1.5 border-r border-[#2b2b2b] px-3 text-[12.5px]",
+                        t === path && mode === "edit"
+                          ? "bg-[#1e1e1e] text-zinc-100"
+                          : "bg-[#181818] text-zinc-500 hover:text-zinc-300",
+                      )}
+                    >
+                      <FileTypeIcon name={t.split("/").pop() || t} />
+                      <span className="truncate">{t.split("/").pop()}</span>
+                      <X
+                        className="size-3 opacity-0 group-hover:opacity-70"
+                        onClick={(e) => closeTab(t, e)}
                       />
-                    ) : currentDiff ? (
-                      <div className="flex h-full flex-col">
-                        <ScrollArea className="h-9 shrink-0 border-b">
-                          <div className="flex gap-1 px-2 py-1">
-                            {diffs.map((d, i) => (
-                              <Button
-                                key={d.path}
-                                size="sm"
-                                variant={i === diffIdx ? "secondary" : "ghost"}
-                                className="h-6 font-mono text-[11px]"
-                                onClick={() => setDiffIdx(i)}
-                              >
-                                {d.path}
-                              </Button>
-                            ))}
-                          </div>
-                        </ScrollArea>
-                        <div className="min-h-0 flex-1">
-                          <DiffEditor
-                            height="100%"
-                            theme="vs-dark"
-                            original={currentDiff.before}
-                            modified={currentDiff.after}
-                            options={{ fontFamily: "IBM Plex Mono", fontSize: 12, renderSideBySide: true }}
-                          />
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                        No uncommitted diffs
-                      </div>
-                    )}
-                  </ResizablePanel>
-                  <ResizableHandle />
-                  <ResizablePanel defaultSize={32} minSize={18} className="flex flex-col">
-                    <div className="px-3 py-2 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                      Agent
-                    </div>
-                    <div className="flex min-h-0 flex-1 flex-col gap-2 px-3 pb-3">
-                      <Textarea
-                        value={prompt}
-                        onChange={(e) => setPrompt(e.target.value)}
-                        className="min-h-[64px] resize-none font-mono text-xs"
-                      />
-                      <div className="flex gap-2">
-                        <Button size="sm" onClick={runAgent} className="gap-1.5">
-                          <Play className="size-3.5" />
-                          Run
-                        </Button>
-                        <Button size="sm" variant="outline" onClick={() => api().abortAgent()}>
-                          <Square className="size-3.5" />
-                          Stop
-                        </Button>
-                      </div>
-                      <ScrollArea className="min-h-0 flex-1 rounded-md border bg-muted/30">
-                        <pre className="whitespace-pre-wrap p-2 font-mono text-[11px] leading-relaxed text-muted-foreground">
-                          {log.slice(-16).join("\n") || "Output appears here."}
-                        </pre>
-                      </ScrollArea>
-                    </div>
-                  </ResizablePanel>
-                </ResizablePanelGroup>
-              </ResizablePanel>
-              <ResizableHandle />
-              <ResizablePanel defaultSize={28} minSize={16} className="flex flex-col bg-card/30">
-                <div className="px-3 py-2 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                  Plan
-                </div>
-                <ScrollArea className="h-40 border-b px-3 pb-2">
-                  {plan.length === 0 ? (
-                    <p className="text-xs text-muted-foreground">Steps show up when a run starts.</p>
-                  ) : (
-                    <ul className="space-y-2">
-                      {plan.map((s) => (
-                        <li key={s.id} className="flex items-start gap-2 text-xs">
-                          <Badge variant={planVariant(s.status)}>{s.status}</Badge>
-                          <span className="leading-5">{s.text}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </ScrollArea>
-                <div className="px-3 py-2 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                  Code graph
+                    </button>
+                  ))}
+                  <div className="ml-auto flex items-center gap-0.5 px-2">
+                    <ToolBtn label="Save" onClick={save}>
+                      <Save className="size-3.5" />
+                    </ToolBtn>
+                    <ToolBtn label="Review diffs" onClick={loadDiffs}>
+                      <GitCompare className="size-3.5" />
+                    </ToolBtn>
+                    <ToolBtn label="Reject writes" onClick={reject}>
+                      <RotateCcw className="size-3.5" />
+                    </ToolBtn>
+                    <Button
+                      size="sm"
+                      variant={mode === "diff" ? "secondary" : "ghost"}
+                      className="h-6 px-2 text-[11px]"
+                      onClick={() => setMode(mode === "edit" ? "diff" : "edit")}
+                    >
+                      {mode === "diff" ? "Edit" : "Review"}
+                    </Button>
+                  </div>
                 </div>
                 <div className="min-h-0 flex-1">
-                  <GraphPane payload={graph} />
+                  {mode === "edit" ? (
+                    <Editor
+                      height="100%"
+                      theme="harness-dark"
+                      path={path}
+                      language={lang}
+                      value={content}
+                      beforeMount={monacoBeforeMount}
+                      onChange={(v) => setContent(v || "")}
+                      options={editorOptions}
+                    />
+                  ) : currentDiff ? (
+                    <div className="flex h-full flex-col">
+                      <div className="flex gap-1 overflow-x-auto border-b border-[#2b2b2b] px-2 py-1">
+                        {diffs.map((d, i) => (
+                          <Button
+                            key={d.path}
+                            size="sm"
+                            variant={i === diffIdx ? "secondary" : "ghost"}
+                            className="h-6 font-mono text-[11px]"
+                            onClick={() => setDiffIdx(i)}
+                          >
+                            {d.path}
+                          </Button>
+                        ))}
+                      </div>
+                      <div className="min-h-0 flex-1">
+                        <DiffEditor
+                          height="100%"
+                          theme="harness-dark"
+                          language={monacoLanguage(currentDiff.path)}
+                          original={currentDiff.before}
+                          modified={currentDiff.after}
+                          beforeMount={monacoBeforeMount}
+                          options={{ ...editorOptions, renderSideBySide: true, fontSize: 12 }}
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex h-full items-center justify-center text-sm text-zinc-500">
+                      No uncommitted diffs
+                    </div>
+                  )}
+                </div>
+              </ResizablePanel>
+              <ResizableHandle className="h-px bg-[#2b2b2b]" />
+              <ResizablePanel defaultSize={22} minSize={10} className="bg-[#1e1e1e]">
+                <div className="border-b border-[#2b2b2b] px-3 py-1 text-[11px] text-zinc-500">Terminal</div>
+                <div className="h-[calc(100%-28px)]">
+                  <TerminalPane />
                 </div>
               </ResizablePanel>
             </ResizablePanelGroup>
           </ResizablePanel>
-          <ResizableHandle />
-          <ResizablePanel defaultSize={22} minSize={12} className="bg-[#111113]">
-            <div className="border-b px-3 py-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-              Terminal
-            </div>
-            <div className="h-[calc(100%-28px)]">
-              <TerminalPane />
-            </div>
+          <ResizableHandle className="w-px bg-[#2b2b2b]" />
+          <ResizablePanel defaultSize={28} minSize={20} className="flex flex-col bg-[#1a1a1a]">
+            <Tabs defaultValue="chat" className="flex h-full flex-col">
+              <div className="flex h-9 items-center border-b border-[#2b2b2b] px-2">
+                <TabsList className="h-7 bg-transparent">
+                  <TabsTrigger value="chat" className="text-[12px]">
+                    Chat
+                  </TabsTrigger>
+                  <TabsTrigger value="graph" className="text-[12px]">
+                    Graph
+                  </TabsTrigger>
+                </TabsList>
+              </div>
+              <TabsContent value="chat" className="mt-0 flex min-h-0 flex-1 flex-col">
+                <ScrollArea className="min-h-0 flex-1">
+                  <div className="space-y-3 px-3 py-3">
+                    {fileName ? (
+                      <p className="text-[11px] text-zinc-500">
+                        Context · <span className="font-mono text-zinc-400">{fileName}</span>
+                      </p>
+                    ) : null}
+                    {plan.length > 0 ? (
+                      <ul className="space-y-1.5 rounded-md border border-[#2b2b2b] bg-[#141414] p-2">
+                        {plan.map((s) => (
+                          <li key={s.id} className="flex items-start gap-2 text-xs">
+                            <Badge variant={planVariant(s.status)}>{s.status}</Badge>
+                            <span className="leading-5 text-zinc-300">{s.text}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                    {log.length === 0 ? (
+                      <p className="text-sm leading-6 text-zinc-500">
+                        Ask the coding agent about this workspace. Retrieval uses the code graph on the Graph tab.
+                      </p>
+                    ) : (
+                      log.map((m) => (
+                        <div
+                          key={m.id}
+                          className={cn(
+                            "rounded-lg px-3 py-2 text-[13px] leading-6",
+                            m.role === "user" && "ml-6 bg-[#2a2a2a] text-zinc-100",
+                            m.role === "assistant" && "mr-2 text-zinc-200",
+                            m.role === "tool" && "font-mono text-[11px] text-zinc-500",
+                            m.role === "error" && "text-red-400",
+                          )}
+                        >
+                          {m.text}
+                        </div>
+                      ))
+                    )}
+                    <div ref={chatEnd} />
+                  </div>
+                </ScrollArea>
+                <div className="border-t border-[#2b2b2b] p-3">
+                  <div className="relative rounded-xl border border-[#333] bg-[#141414] focus-within:border-zinc-500">
+                    <Textarea
+                      value={prompt}
+                      onChange={(e) => setPrompt(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          runAgent();
+                        }
+                      }}
+                      placeholder="Plan, search the graph, or edit files…"
+                      className="min-h-[72px] resize-none border-0 bg-transparent pr-10 text-[13px] shadow-none focus-visible:ring-0"
+                    />
+                    <div className="absolute bottom-2 right-2 flex gap-1">
+                      <Button
+                        size="icon"
+                        className="h-7 w-7 rounded-lg"
+                        onClick={runAgent}
+                        disabled={!prompt.trim()}
+                      >
+                        <ArrowUp className="size-3.5" />
+                      </Button>
+                      <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => api().abortAgent()}>
+                        <Square className="size-3" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </TabsContent>
+              <TabsContent value="graph" className="mt-0 min-h-0 flex-1">
+                <GraphPane payload={graph} />
+              </TabsContent>
+            </Tabs>
           </ResizablePanel>
         </ResizablePanelGroup>
       </div>
@@ -293,7 +397,7 @@ function ToolBtn({
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" onClick={onClick}>
+        <Button variant="ghost" size="icon" className="h-7 w-7 text-zinc-500 hover:text-zinc-200" onClick={onClick}>
           {children}
         </Button>
       </TooltipTrigger>

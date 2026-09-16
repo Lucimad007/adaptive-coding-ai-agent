@@ -15,10 +15,10 @@ export default function TerminalPane() {
         fontSize: 12,
         fontFamily: '"IBM Plex Mono", ui-monospace, monospace',
         theme: {
-          background: "#111113",
-          foreground: "#e4e4e7",
-          cursor: "#e4e4e7",
-          selectionBackground: "#3f3f46",
+          background: "#1e1e1e",
+          foreground: "#d4d4d4",
+          cursor: "#d4d4d4",
+          selectionBackground: "#264f78",
         },
       });
       t.open(ref.current!);

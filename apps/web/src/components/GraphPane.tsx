@@ -52,5 +52,5 @@ export default function GraphPane({
     return () => network?.destroy();
   }, [payload]);
 
-  return <div ref={ref} className="h-full min-h-[160px] w-full bg-[#111113]" />;
+  return <div ref={ref} className="h-full min-h-[160px] w-full bg-[#1e1e1e]" />;
 }

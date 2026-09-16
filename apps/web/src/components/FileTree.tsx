@@ -1,7 +1,8 @@
-import { ChevronRight, FileCode, Folder } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { FileTypeIcon, FolderIcon } from "@/lib/files";
 
 export type FileEntry = {
   path: string;
@@ -22,7 +23,7 @@ export default function FileTree({
   depth?: number;
 }) {
   return (
-    <div className="flex flex-col">
+    <div className="flex flex-col py-1">
       {entries.map((e) =>
         e.kind === "dir" ? (
           <DirNode key={e.path} entry={e} onOpen={onOpen} activePath={activePath} depth={depth} />
@@ -34,12 +35,12 @@ export default function FileTree({
             size="sm"
             onClick={() => onOpen(e.path)}
             className={cn(
-              "h-7 w-full justify-start gap-1.5 rounded-none px-2 font-normal text-muted-foreground hover:text-foreground",
-              activePath === e.path && "bg-accent text-foreground",
+              "h-6 w-full justify-start gap-1.5 rounded-none px-2 text-[12.5px] font-normal text-zinc-400 hover:bg-white/5 hover:text-zinc-100",
+              activePath === e.path && "bg-white/8 text-zinc-100",
             )}
             style={{ paddingLeft: 8 + depth * 12 }}
           >
-            <FileCode className="size-3.5 opacity-70" />
+            <FileTypeIcon name={e.name} />
             <span className="truncate">{e.name}</span>
           </Button>
         ),
@@ -66,11 +67,11 @@ function DirNode({
         variant="ghost"
         size="sm"
         onClick={() => setOpen((v) => !v)}
-        className="h-7 w-full justify-start gap-1 rounded-none px-2 font-normal text-muted-foreground hover:text-foreground"
+        className="h-6 w-full justify-start gap-1 rounded-none px-2 text-[12.5px] font-normal text-zinc-400 hover:bg-white/5 hover:text-zinc-100"
         style={{ paddingLeft: 8 + depth * 12 }}
       >
-        <ChevronRight className={cn("size-3.5 transition-transform", open && "rotate-90")} />
-        <Folder className="size-3.5 opacity-70" />
+        <ChevronRight className={cn("size-3 shrink-0 text-zinc-600 transition-transform", open && "rotate-90")} />
+        <FolderIcon open={open} />
         <span className="truncate">{entry.name}</span>
       </Button>
       {open ? (
