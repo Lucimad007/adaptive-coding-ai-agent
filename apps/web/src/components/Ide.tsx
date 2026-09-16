@@ -209,9 +209,9 @@ export default function Ide() {
 
   return (
     <TooltipProvider delayDuration={250}>
-      <div className="flex h-screen flex-col overflow-hidden bg-[#181818] text-zinc-200">
-        <ResizablePanelGroup direction="horizontal" className="flex-1">
-          <ResizablePanel defaultSize={16} minSize={12} className="bg-[#181818]">
+      <div className="flex h-screen min-h-0 min-w-0 flex-col overflow-hidden bg-[#181818] text-zinc-200">
+        <ResizablePanelGroup direction="horizontal" className="min-h-0 min-w-0 flex-1">
+          <ResizablePanel defaultSize={18} minSize={10} maxSize={32} className="min-w-0 overflow-hidden bg-[#181818]">
             <div className="flex h-8 items-center justify-between gap-2 px-3">
               <div className="flex min-w-0 items-center gap-2">
                 <img src="/patchline-icon.png" alt="" className="size-6 rounded-full" />
@@ -226,16 +226,17 @@ export default function Ide() {
             </ScrollArea>
           </ResizablePanel>
           <ResizableHandle className="w-px bg-[#2b2b2b]" />
-          <ResizablePanel defaultSize={56} minSize={30}>
-            <ResizablePanelGroup direction="vertical">
-              <ResizablePanel defaultSize={78} minSize={40} className="flex flex-col bg-[#1e1e1e]">
-                <div className="flex h-9 shrink-0 items-stretch border-b border-[#2b2b2b] bg-[#181818]">
-                  {openTabs.map((t) => (
+          <ResizablePanel defaultSize={52} minSize={28} className="min-w-0 overflow-hidden">
+            <ResizablePanelGroup direction="vertical" className="min-h-0 min-w-0">
+              <ResizablePanel defaultSize={78} minSize={30} className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-[#1e1e1e]">
+                <div className="flex h-9 min-w-0 shrink-0 items-stretch overflow-hidden border-b border-[#2b2b2b] bg-[#181818]">
+                  <div className="flex min-w-0 flex-1 overflow-x-auto">
+                    {openTabs.map((t) => (
                     <button
                       key={t}
                       onClick={() => openFile(t)}
                       className={cn(
-                        "group flex max-w-[180px] items-center gap-1.5 border-r border-[#2b2b2b] px-3 text-[12.5px]",
+                        "group flex max-w-[180px] shrink-0 items-center gap-1.5 border-r border-[#2b2b2b] px-3 text-[12.5px]",
                         t === path && mode !== "diff"
                           ? "bg-[#1e1e1e] text-zinc-100"
                           : "bg-[#181818] text-zinc-500 hover:text-zinc-300",
@@ -248,8 +249,9 @@ export default function Ide() {
                         onClick={(e) => closeTab(t, e)}
                       />
                     </button>
-                  ))}
-                  <div className="ml-auto flex items-center gap-0.5 px-2">
+                    ))}
+                  </div>
+                  <div className="ml-auto flex shrink-0 items-center gap-0.5 px-2">
                     <ToolBtn label="Save" onClick={save}>
                       <Save className="size-3.5" />
                     </ToolBtn>
@@ -293,8 +295,8 @@ export default function Ide() {
                 </div>
                 <div className="min-h-0 flex-1">
                   {mode === "preview" ? (
-                    <ScrollArea className="h-full">
-                      <article className="mx-auto max-w-3xl px-8 py-8">
+                    <ScrollArea className="h-full min-w-0">
+                      <article className="mx-auto max-w-3xl min-w-0 px-6 py-8 sm:px-8">
                         <p className="mb-6 text-[11px] uppercase tracking-wider text-zinc-500">Preview · {fileName}</p>
                         <ChatMarkdown text={content} className="space-y-4 text-[14px] leading-7" />
                       </article>
@@ -345,17 +347,17 @@ export default function Ide() {
                 </div>
               </ResizablePanel>
               <ResizableHandle className="h-px bg-[#2b2b2b]" />
-              <ResizablePanel defaultSize={22} minSize={10} className="bg-[#1e1e1e]">
+              <ResizablePanel defaultSize={22} minSize={10} className="min-h-0 min-w-0 overflow-hidden bg-[#1e1e1e]">
                 <div className="border-b border-[#2b2b2b] px-3 py-1 text-[11px] text-zinc-500">Terminal</div>
-                <div className="h-[calc(100%-28px)]">
+                <div className="h-[calc(100%-28px)] min-w-0 overflow-hidden">
                   <TerminalPane />
                 </div>
               </ResizablePanel>
             </ResizablePanelGroup>
           </ResizablePanel>
           <ResizableHandle className="w-px bg-[#2b2b2b]" />
-          <ResizablePanel defaultSize={28} minSize={20} className="flex flex-col bg-[#1a1a1a]">
-            <Tabs defaultValue="chat" className="flex h-full flex-col">
+          <ResizablePanel defaultSize={30} minSize={18} maxSize={48} className="flex min-w-0 flex-col overflow-hidden bg-[#1a1a1a]">
+            <Tabs defaultValue="chat" className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
               <div className="flex h-9 items-center border-b border-[#2b2b2b] px-2">
                 <TabsList className="h-7 bg-transparent">
                   <TabsTrigger value="chat" className="text-[12px]">
@@ -366,9 +368,9 @@ export default function Ide() {
                   </TabsTrigger>
                 </TabsList>
               </div>
-              <TabsContent value="chat" className="mt-0 flex min-h-0 flex-1 flex-col">
-                <ScrollArea className="min-h-0 flex-1">
-                  <div className="space-y-3 px-3 py-3">
+              <TabsContent value="chat" className="mt-0 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+                <ScrollArea className="min-h-0 min-w-0 flex-1">
+                  <div className="min-w-0 max-w-full space-y-3 overflow-hidden px-3 py-3">
                     {fileName ? (
                       <p className="text-[11px] text-zinc-500">
                         Context · <span className="font-mono text-zinc-400">{fileName}</span>
@@ -393,10 +395,10 @@ export default function Ide() {
                         <div
                           key={m.id}
                           className={cn(
-                            "px-1 py-1 text-[13px] leading-6",
-                            m.role === "user" && "ml-6 rounded-2xl bg-[#2a2a2a] px-3 py-2 text-zinc-100",
-                            m.role === "assistant" && "mr-1",
-                            m.role === "tool" && "font-mono text-[11px] text-zinc-500",
+                            "min-w-0 max-w-full overflow-hidden px-1 py-1 text-[13px] leading-6",
+                            m.role === "user" && "ml-4 rounded-2xl bg-[#2a2a2a] px-3 py-2 text-zinc-100 [overflow-wrap:anywhere]",
+                            m.role === "assistant" && "mr-0",
+                            m.role === "tool" && "break-all font-mono text-[11px] text-zinc-500",
                             m.role === "error" && "text-red-400",
                           )}
                         >
@@ -407,8 +409,8 @@ export default function Ide() {
                     <div ref={chatEnd} />
                   </div>
                 </ScrollArea>
-                <div className="border-t border-[#2b2b2b] p-3">
-                  <div className="relative rounded-xl border border-[#333] bg-[#141414] focus-within:border-zinc-500">
+                <div className="min-w-0 shrink-0 border-t border-[#2b2b2b] p-3">
+                  <div className="relative min-w-0 rounded-xl border border-[#333] bg-[#141414] focus-within:border-zinc-500">
                     <Textarea
                       value={prompt}
                       onChange={(e) => setPrompt(e.target.value)}
@@ -419,7 +421,7 @@ export default function Ide() {
                         }
                       }}
                       placeholder="Plan, search the graph, or edit files…"
-                      className="min-h-[72px] resize-none border-0 bg-transparent pr-10 text-[13px] shadow-none focus-visible:ring-0"
+                      className="min-h-[72px] w-full max-w-full resize-none border-0 bg-transparent pr-10 text-[13px] shadow-none focus-visible:ring-0"
                     />
                     <div className="absolute bottom-2 right-2 flex gap-1">
                       <Button
@@ -437,7 +439,7 @@ export default function Ide() {
                   </div>
                 </div>
               </TabsContent>
-              <TabsContent value="graph" className="mt-0 min-h-0 flex-1">
+              <TabsContent value="graph" className="mt-0 min-h-0 min-w-0 flex-1 overflow-hidden">
                 <GraphPane payload={graph} />
               </TabsContent>
             </Tabs>

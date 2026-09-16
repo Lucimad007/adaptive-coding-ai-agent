@@ -34,5 +34,5 @@ export default function TerminalPane() {
     };
   }, []);
 
-  return <div ref={ref} className="h-full w-full p-2" />;
+  return <div ref={ref} className="h-full w-full min-w-0 overflow-hidden p-2" />;
 }
