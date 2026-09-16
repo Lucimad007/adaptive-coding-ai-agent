@@ -19,14 +19,16 @@ OPENCODE_API_KEY=sk-...
 
 Get a key from [OpenCode auth](https://opencode.ai/auth) after subscribing to Go.
 
-## Desktop IDE (Electron)
+## Patchline (desktop IDE)
+
+**Patchline** is the local Electron coding desk for this repo: graph-aware retrieval, adapter routing, and patch review in one window.
 
 ```powershell
 npm install
 npm run dev
 ```
 
-Opens an Electron window (Vite UI on `127.0.0.1:5173`, no Nest server). Pick a folder or set `WORKSPACE_ROOT`. Agent runs need `OPENCODE_API_KEY` and `.venv`.
+Opens the Patchline window (Vite UI on `127.0.0.1:5173`). Pick a folder or set `WORKSPACE_ROOT`. Agent runs need `OPENCODE_API_KEY` and `.venv`.
 
 Windows installer:
 

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import Editor, { DiffEditor, type BeforeMount } from "@monaco-editor/react";
 import { ArrowUp, FolderOpen, GitCompare, RotateCcw, Save, Square, X } from "lucide-react";
+import ChatMarkdown from "./ChatMarkdown";
 import FileTree, { type FileEntry } from "./FileTree";
 import GraphPane from "./GraphPane";
 import TerminalPane from "./TerminalPane";
@@ -173,7 +174,23 @@ export default function Ide() {
   useEffect(() => {
     if (!window.harness) return;
     loadTree();
-    openFile("README.md").catch(() => undefined);
+    (async () => {
+      try {
+        const data = await api().read("README.md");
+        setPath("README.md");
+        setContent(data.content ?? "");
+        setOpenTabs((tabs) => (tabs.includes("README.md") ? tabs : ["README.md", ...tabs]));
+        setLog([
+          {
+            id: "readme",
+            role: "assistant",
+            text: data.content || "README.md is empty.",
+          },
+        ]);
+      } catch {
+        openFile("README.md").catch(() => undefined);
+      }
+    })();
     const off = api().onAgentEvent(() => undefined);
     return () => off();
   }, []);
@@ -190,8 +207,11 @@ export default function Ide() {
       <div className="flex h-screen flex-col overflow-hidden bg-[#181818] text-zinc-200">
         <ResizablePanelGroup direction="horizontal" className="flex-1">
           <ResizablePanel defaultSize={16} minSize={12} className="bg-[#181818]">
-            <div className="flex h-8 items-center justify-between px-3">
-              <span className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">Explorer</span>
+            <div className="flex h-8 items-center justify-between gap-2 px-3">
+              <div className="flex min-w-0 items-center gap-2">
+                <img src="/patchline-icon.png" alt="" className="size-6 rounded-full" />
+                <span className="truncate text-[12px] font-semibold tracking-tight text-zinc-200">Patchline</span>
+              </div>
               <ToolBtn label="Open folder" onClick={() => api().pickWorkspace().then(loadTree)}>
                 <FolderOpen className="size-3.5" />
               </ToolBtn>
@@ -339,14 +359,14 @@ export default function Ide() {
                         <div
                           key={m.id}
                           className={cn(
-                            "rounded-lg px-3 py-2 text-[13px] leading-6",
-                            m.role === "user" && "ml-6 bg-[#2a2a2a] text-zinc-100",
-                            m.role === "assistant" && "mr-2 text-zinc-200",
+                            "px-1 py-1 text-[13px] leading-6",
+                            m.role === "user" && "ml-6 rounded-2xl bg-[#2a2a2a] px-3 py-2 text-zinc-100",
+                            m.role === "assistant" && "mr-1",
                             m.role === "tool" && "font-mono text-[11px] text-zinc-500",
                             m.role === "error" && "text-red-400",
                           )}
                         >
-                          {m.text}
+                          {m.role === "assistant" ? <ChatMarkdown text={m.text} /> : m.text}
                         </div>
                       ))
                     )}

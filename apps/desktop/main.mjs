@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow, dialog, ipcMain } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, nativeImage } from "electron";
 import { pythonBin } from "./python.mjs";
 import {
   REPO_ROOT,
@@ -26,6 +26,13 @@ function loadDotEnv() {
 }
 
 loadDotEnv();
+
+const iconPath = path.join(here, "build", "icon.png");
+const appIcon = nativeImage.createFromPath(iconPath);
+
+if (process.platform === "win32") {
+  app.setAppUserModelId("dev.patchline.app");
+}
 
 let win = null;
 let agentProc = null;
@@ -91,6 +98,8 @@ function createWindow() {
   win = new BrowserWindow({
     width: 1400,
     height: 900,
+    title: "Patchline",
+    icon: appIcon.isEmpty() ? iconPath : appIcon,
     webPreferences: {
       preload: path.join(here, "preload.cjs"),
       contextIsolation: true,
@@ -196,5 +205,10 @@ ipcMain.on("term:close", () => {
   shellProc = null;
 });
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  if (!appIcon.isEmpty() && process.platform === "darwin" && app.dock) {
+    app.dock.setIcon(appIcon);
+  }
+  createWindow();
+});
 app.on("window-all-closed", () => app.quit());

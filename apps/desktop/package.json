@@ -15,16 +15,18 @@
     "electron-builder": "^25.1.8"
   },
   "build": {
-    "appId": "local.adaptive.harness",
-    "productName": "Adaptive Harness",
+    "appId": "dev.patchline.app",
+    "productName": "Patchline",
     "directories": {
       "output": "release"
     },
+    "icon": "build/icon.png",
     "files": [
       "main.mjs",
       "preload.cjs",
       "workspace.mjs",
-      "python.mjs"
+      "python.mjs",
+      "build/icon.png"
     ],
     "extraResources": [
       {

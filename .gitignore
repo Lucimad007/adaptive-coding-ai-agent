@@ -21,6 +21,8 @@ __pycache__/
 .ruff_cache/
 dist/
 build/
+!apps/desktop/build/
+!apps/desktop/build/**
 data/*.db
 data/*.json
 data/graphs/

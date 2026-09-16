@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Patchline">
+  <defs>
+    <radialGradient id="disc" cx="42%" cy="32%" r="78%">
+      <stop offset="0%" stop-color="#2a2a30" />
+      <stop offset="55%" stop-color="#161618" />
+      <stop offset="100%" stop-color="#070708" />
+    </radialGradient>
+    <radialGradient id="amber" cx="32%" cy="28%" r="72%">
+      <stop offset="0%" stop-color="#fff3c4" />
+      <stop offset="35%" stop-color="#fbbf24" />
+      <stop offset="100%" stop-color="#b45309" />
+    </radialGradient>
+    <radialGradient id="silver" cx="32%" cy="28%" r="72%">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="40%" stop-color="#d4d4d8" />
+      <stop offset="100%" stop-color="#52525b" />
+    </radialGradient>
+    <filter id="innerDisc" x="-10%" y="-10%" width="120%" height="120%">
+      <feOffset dx="0" dy="10" />
+      <feGaussianBlur stdDeviation="14" result="off" />
+      <feComposite in="off" in2="SourceAlpha" operator="arithmetic" k2="-1" k3="1" result="inner" />
+      <feColorMatrix in="inner" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.65 0" />
+      <feMerge>
+        <feMergeNode in="SourceGraphic" />
+        <feMergeNode />
+      </feMerge>
+    </filter>
+    <filter id="innerDot" x="-20%" y="-20%" width="140%" height="140%">
+      <feOffset dx="5" dy="8" />
+      <feGaussianBlur stdDeviation="6" result="off" />
+      <feComposite in="off" in2="SourceAlpha" operator="arithmetic" k2="-1" k3="1" result="inner" />
+      <feColorMatrix in="inner" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.5 0" />
+      <feMerge>
+        <feMergeNode in="SourceGraphic" />
+        <feMergeNode />
+      </feMerge>
+    </filter>
+    <filter id="glow" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="14" result="b" />
+      <feMerge>
+        <feMergeNode in="b" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+  <circle cx="256" cy="256" r="236" fill="url(#disc)" filter="url(#innerDisc)" />
+  <g stroke="#8b8b94" stroke-width="12" stroke-linecap="round" opacity="0.75">
+    <line x1="256" y1="168" x2="150" y2="348" />
+    <line x1="256" y1="168" x2="362" y2="348" />
+    <line x1="150" y1="348" x2="362" y2="348" />
+  </g>
+  <circle cx="150" cy="348" r="52" fill="url(#silver)" filter="url(#innerDot)" />
+  <circle cx="362" cy="348" r="52" fill="url(#silver)" filter="url(#innerDot)" />
+  <g filter="url(#glow)">
+    <circle cx="256" cy="168" r="60" fill="url(#amber)" filter="url(#innerDot)" />
+  </g>
+</svg>
