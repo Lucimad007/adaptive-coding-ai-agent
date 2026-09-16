@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import Editor, { DiffEditor, type BeforeMount } from "@monaco-editor/react";
-import { ArrowUp, FolderOpen, GitCompare, RotateCcw, Save, Square, X } from "lucide-react";
+import { ArrowUp, BookOpen, Code2, FolderOpen, GitCompare, RotateCcw, Save, Square, X } from "lucide-react";
 import ChatMarkdown from "./ChatMarkdown";
 import FileTree, { type FileEntry } from "./FileTree";
 import GraphPane from "./GraphPane";
@@ -70,6 +70,10 @@ const editorOptions = {
   },
 };
 
+function isMarkdown(rel: string) {
+  return /\.md$/i.test(rel) || /^readme(\.|$)/i.test(rel.split(/[/\\]/).pop() || "");
+}
+
 export default function Ide() {
   const [tree, setTree] = useState<FileEntry[]>([]);
   const [openTabs, setOpenTabs] = useState<string[]>(["README.md"]);
@@ -86,7 +90,7 @@ export default function Ide() {
   } | null>(null);
   const [diffs, setDiffs] = useState<{ path: string; before: string; after: string }[]>([]);
   const [diffIdx, setDiffIdx] = useState(0);
-  const [mode, setMode] = useState<"edit" | "diff">("edit");
+  const [mode, setMode] = useState<"edit" | "preview" | "diff">("preview");
   const chatEnd = useRef<HTMLDivElement>(null);
   const lang = monacoLanguage(mode === "diff" && diffs[diffIdx] ? diffs[diffIdx].path : path);
 
@@ -99,7 +103,7 @@ export default function Ide() {
     const data = await api().read(rel);
     setPath(rel);
     setContent(data.content ?? "");
-    setMode("edit");
+    setMode(isMarkdown(rel) ? "preview" : "edit");
     setOpenTabs((tabs) => (tabs.includes(rel) ? tabs : [...tabs, rel]));
   }
 
@@ -179,6 +183,7 @@ export default function Ide() {
         const data = await api().read("README.md");
         setPath("README.md");
         setContent(data.content ?? "");
+        setMode("preview");
         setOpenTabs((tabs) => (tabs.includes("README.md") ? tabs : ["README.md", ...tabs]));
         setLog([
           {
@@ -231,7 +236,7 @@ export default function Ide() {
                       onClick={() => openFile(t)}
                       className={cn(
                         "group flex max-w-[180px] items-center gap-1.5 border-r border-[#2b2b2b] px-3 text-[12.5px]",
-                        t === path && mode === "edit"
+                        t === path && mode !== "diff"
                           ? "bg-[#1e1e1e] text-zinc-100"
                           : "bg-[#181818] text-zinc-500 hover:text-zinc-300",
                       )}
@@ -254,18 +259,47 @@ export default function Ide() {
                     <ToolBtn label="Reject writes" onClick={reject}>
                       <RotateCcw className="size-3.5" />
                     </ToolBtn>
+                    {isMarkdown(path) && mode !== "diff" ? (
+                      <div className="mr-1 flex rounded-md bg-[#2a2a2a] p-0.5">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className={cn("h-6 gap-1 px-2 text-[11px]", mode === "preview" && "bg-[#1e1e1e] text-zinc-100")}
+                          onClick={() => setMode("preview")}
+                        >
+                          <BookOpen className="size-3" />
+                          Preview
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className={cn("h-6 gap-1 px-2 text-[11px]", mode === "edit" && "bg-[#1e1e1e] text-zinc-100")}
+                          onClick={() => setMode("edit")}
+                        >
+                          <Code2 className="size-3" />
+                          Source
+                        </Button>
+                      </div>
+                    ) : null}
                     <Button
                       size="sm"
                       variant={mode === "diff" ? "secondary" : "ghost"}
                       className="h-6 px-2 text-[11px]"
-                      onClick={() => setMode(mode === "edit" ? "diff" : "edit")}
+                      onClick={() => setMode(mode === "diff" ? (isMarkdown(path) ? "preview" : "edit") : "diff")}
                     >
                       {mode === "diff" ? "Edit" : "Review"}
                     </Button>
                   </div>
                 </div>
                 <div className="min-h-0 flex-1">
-                  {mode === "edit" ? (
+                  {mode === "preview" ? (
+                    <ScrollArea className="h-full">
+                      <article className="mx-auto max-w-3xl px-8 py-8">
+                        <p className="mb-6 text-[11px] uppercase tracking-wider text-zinc-500">Preview · {fileName}</p>
+                        <ChatMarkdown text={content} className="space-y-4 text-[14px] leading-7" />
+                      </article>
+                    </ScrollArea>
+                  ) : mode === "edit" ? (
                     <Editor
                       height="100%"
                       theme="harness-dark"

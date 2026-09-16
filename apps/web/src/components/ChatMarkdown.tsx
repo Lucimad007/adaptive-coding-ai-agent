@@ -2,10 +2,10 @@ import { Fragment, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 export default function ChatMarkdown({ text, className }: { text: string; className?: string }) {
-  const blocks = splitFences(text);
+  const src = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
   return (
-    <div className={cn("space-y-3 text-[13px] leading-6 text-zinc-200", className)}>
-      {blocks.map((block, i) =>
+    <div className={cn("space-y-3 break-words text-[13px] leading-6 text-zinc-200", className)}>
+      {splitFences(src).map((block, i) =>
         block.kind === "code" ? (
           <pre
             key={i}
@@ -14,14 +14,10 @@ export default function ChatMarkdown({ text, className }: { text: string; classN
             {block.lang ? (
               <div className="mb-1.5 font-sans text-[10px] uppercase tracking-wide text-zinc-500">{block.lang}</div>
             ) : null}
-            <code>{block.text}</code>
+            <code className="whitespace-pre">{block.text}</code>
           </pre>
         ) : (
-          <div key={i} className="space-y-2">
-            {block.text.split(/\n{2,}/).map((para, j) => (
-              <Block key={j} text={para} />
-            ))}
-          </div>
+          <MarkdownLines key={i} text={block.text} />
         ),
       )}
     </div>
@@ -42,30 +38,90 @@ function splitFences(src: string) {
   return parts;
 }
 
-function Block({ text }: { text: string }) {
-  const lines = text.replace(/^\n+|\n+$/g, "").split("\n");
-  if (!lines[0]) return null;
-  const heading = lines[0].match(/^(#{1,3})\s+(.*)$/);
-  if (heading && lines.length === 1) {
-    const n = heading[1].length;
-    const cls =
-      n === 1
-        ? "text-[16px] font-semibold tracking-tight text-zinc-50"
-        : n === 2
-          ? "text-[14px] font-semibold text-zinc-100"
-          : "text-[13px] font-medium text-zinc-200";
-    return <div className={cls}>{inline(heading[2])}</div>;
-  }
-  if (lines.every((l) => /^\s*[-*]\s+/.test(l))) {
-    return (
-      <ul className="list-disc space-y-1 pl-5 text-zinc-300">
-        {lines.map((l, i) => (
-          <li key={i}>{inline(l.replace(/^\s*[-*]\s+/, ""))}</li>
-        ))}
-      </ul>
+function MarkdownLines({ text }: { text: string }) {
+  const lines = text.split("\n");
+  const nodes: ReactNode[] = [];
+  let i = 0;
+  let k = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    if (!line.trim()) {
+      i += 1;
+      continue;
+    }
+    const heading = line.match(/^(#{1,6})\s+(.*)$/);
+    if (heading) {
+      const n = Math.min(heading[1].length, 3);
+      const cls =
+        n === 1
+          ? "pt-1 text-[16px] font-semibold tracking-tight text-zinc-50"
+          : n === 2
+            ? "pt-1 text-[14px] font-semibold text-zinc-100"
+            : "pt-0.5 text-[13px] font-medium text-zinc-200";
+      nodes.push(
+        <div key={k++} className={cls}>
+          {inline(heading[2])}
+        </div>,
+      );
+      i += 1;
+      continue;
+    }
+    if (/^\s*[-*]\s+/.test(line) || /^\s*\d+\.\s+/.test(line)) {
+      const items: string[] = [];
+      while (i < lines.length && (/^\s*[-*]\s+/.test(lines[i]) || /^\s*\d+\.\s+/.test(lines[i]))) {
+        items.push(lines[i].replace(/^\s*(?:[-*]|\d+\.)\s+/, ""));
+        i += 1;
+      }
+      nodes.push(
+        <ul key={k++} className="list-disc space-y-1 pl-5 text-zinc-300">
+          {items.map((item, j) => (
+            <li key={j}>{inline(item)}</li>
+          ))}
+        </ul>,
+      );
+      continue;
+    }
+    if (/^\|/.test(line)) {
+      const rows: string[][] = [];
+      while (i < lines.length && /^\|/.test(lines[i])) {
+        const cells = lines[i]
+          .split("|")
+          .slice(1, -1)
+          .map((c) => c.trim());
+        if (!cells.every((c) => /^[-:]+$/.test(c))) rows.push(cells);
+        i += 1;
+      }
+      nodes.push(
+        <div key={k++} className="overflow-x-auto">
+          <table className="w-full border-collapse text-left text-[12px] text-zinc-300">
+            <tbody>
+              {rows.map((row, ri) => (
+                <tr key={ri} className="border-b border-[#2b2b2b]">
+                  {row.map((cell, ci) => (
+                    <td key={ci} className={cn("py-1 pr-3", ri === 0 && "font-medium text-zinc-100")}>
+                      {inline(cell)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>,
+      );
+      continue;
+    }
+    const para: string[] = [];
+    while (i < lines.length && lines[i].trim() && !/^(#{1,6})\s+/.test(lines[i]) && !/^\s*[-*]\s+/.test(lines[i]) && !/^\|/.test(lines[i])) {
+      para.push(lines[i]);
+      i += 1;
+    }
+    nodes.push(
+      <p key={k++} className="text-zinc-300">
+        {inline(para.join(" "))}
+      </p>,
     );
   }
-  return <p className="text-zinc-300">{inline(lines.join(" "))}</p>;
+  return <div className="space-y-2">{nodes}</div>;
 }
 
 function inline(src: string): ReactNode[] {
@@ -73,7 +129,12 @@ function inline(src: string): ReactNode[] {
   return tokens.map((tok, i) => {
     if (!tok) return <Fragment key={i} />;
     const bold = tok.match(/^\*\*([^*]+)\*\*$/);
-    if (bold) return <strong key={i} className="font-medium text-zinc-50">{bold[1]}</strong>;
+    if (bold)
+      return (
+        <strong key={i} className="font-medium text-zinc-50">
+          {bold[1]}
+        </strong>
+      );
     const code = tok.match(/^`([^`]+)`$/);
     if (code)
       return (
@@ -84,7 +145,13 @@ function inline(src: string): ReactNode[] {
     const link = tok.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
     if (link)
       return (
-        <a key={i} href={link[2]} className="text-sky-400 underline-offset-2 hover:underline" target="_blank" rel="noreferrer">
+        <a
+          key={i}
+          href={link[2]}
+          className="text-sky-400 underline-offset-2 hover:underline"
+          target="_blank"
+          rel="noreferrer"
+        >
           {link[1]}
         </a>
       );
