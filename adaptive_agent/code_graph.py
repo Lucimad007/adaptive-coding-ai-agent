@@ -69,6 +69,27 @@ class CodeGraph:
         ]
         return "\n".join(lines)
 
+    def remembered_summary(self, name: str) -> str:
+        n_files = sum(1 for n in self.nodes.values() if n.kind == "file")
+        n_symbols = sum(1 for n in self.nodes.values() if n.kind != "file")
+        counts: dict[str, int] = defaultdict(int)
+        seen_coedit: set[tuple[str, str]] = set()
+        for edge in self.edges.values():
+            if edge.kind == "co_edit":
+                pair = tuple(sorted((edge.source, edge.target)))
+                if pair in seen_coedit:
+                    continue
+                seen_coedit.add(pair)
+                counts["co_edit"] += 1
+            elif edge.kind in {"import", "call"}:
+                counts[edge.kind] += 1
+        edges = {k: counts.get(k, 0) for k in ("import", "call", "co_edit")}
+        return (
+            f"=== The codebase the agent remembers: {name} ===\n"
+            f"{n_files} files, {n_symbols} symbols (functions/classes/methods); "
+            f"edges: {edges}"
+        )
+
 
 def iter_python_files(root: Path) -> list[Path]:
     files: list[Path] = []
@@ -151,8 +172,8 @@ def build_code_graph(root: Path, *, since_commit: str | None = None) -> CodeGrap
         defs_by_file[rel] = {}
         for qualname in local_defs:
             nid = function_id(rel, qualname)
-            graph.add_node(Node(id=nid, kind="function", label=qualname, path=rel))
-            graph.add_edge(file_id(rel), nid, "defines", 1.0)
+            graph.add_node(Node(id=nid, kind="symbol", label=qualname, path=rel))
+            graph.add_edge(file_id(rel), nid, "contains", 1.0)
             short = qualname.split(".")[-1]
             defs_by_file[rel][short] = nid
             defs_by_name[short].append(nid)
@@ -172,26 +193,30 @@ def build_code_graph(root: Path, *, since_commit: str | None = None) -> CodeGrap
             if e.source == file_id(rel) and e.kind == "import"
         }
         for caller, called in _function_calls(tree):
-            source = function_id(rel, caller) if caller and function_id(rel, caller) in graph.nodes else file_id(rel)
+            if not caller:
+                continue
+            source = function_id(rel, caller)
+            if source not in graph.nodes:
+                continue
             local_target = defs_by_file.get(rel, {}).get(called)
             if local_target:
-                graph.add_edge(source, local_target, "calls", 1.0)
+                graph.add_edge(source, local_target, "call", 1.0)
                 continue
             if called in COMMON_CALLEES:
                 continue
             targets = defs_by_name.get(called, [])
             if len(targets) == 1:
-                graph.add_edge(source, targets[0], "calls", 1.0)
+                graph.add_edge(source, targets[0], "call", 1.0)
             elif len(targets) > 1:
                 for tid in targets:
                     owner = file_id(graph.nodes[tid].path)
                     if owner in imported_files:
-                        graph.add_edge(source, tid, "calls", 1.0)
+                        graph.add_edge(source, tid, "call", 1.0)
 
     for a, b, weight in _coedit_pairs(root, since_commit=since_commit):
         if file_id(a) in graph.nodes and file_id(b) in graph.nodes:
-            graph.add_edge(file_id(a), file_id(b), "coedit", float(weight))
-            graph.add_edge(file_id(b), file_id(a), "coedit", float(weight))
+            graph.add_edge(file_id(a), file_id(b), "co_edit", float(weight))
+            graph.add_edge(file_id(b), file_id(a), "co_edit", float(weight))
 
     return graph
 
@@ -212,19 +237,21 @@ def _function_defs(tree: ast.AST) -> list[str]:
 
         def visit_ClassDef(self, node: ast.ClassDef) -> None:
             self.stack.append(node.name)
+            names.append(".".join(self.stack))
             self.generic_visit(node)
             self.stack.pop()
 
         def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
-            self._add(node.name)
+            names.append(".".join([*self.stack, node.name]))
+            self.stack.append(node.name)
             self.generic_visit(node)
+            self.stack.pop()
 
         def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
-            self._add(node.name)
+            names.append(".".join([*self.stack, node.name]))
+            self.stack.append(node.name)
             self.generic_visit(node)
-
-        def _add(self, name: str) -> None:
-            names.append(".".join([*self.stack, name]))
+            self.stack.pop()
 
     Visitor().visit(tree)
     return names
@@ -370,7 +397,7 @@ def format_preview(graph: CodeGraph, limit: int = 20) -> str:
     for edge in graph.edges.values():
         by_kind[edge.kind].append(edge)
     lines = [graph.summary()]
-    for kind in ("import", "calls", "coedit", "defines"):
+    for kind in ("import", "call", "co_edit", "contains"):
         edges = by_kind.get(kind, [])
         if not edges:
             continue
@@ -393,6 +420,7 @@ def main() -> None:
     args = parser.parse_args()
     root = Path(args.repo).resolve()
     graph = build_code_graph(root)
+    print(graph.remembered_summary(root.name))
     print(format_preview(graph))
     if args.out:
         out = save_graph(graph, Path(args.out))

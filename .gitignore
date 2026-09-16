@@ -24,3 +24,9 @@ build/
 data/*.db
 data/*.json
 data/graphs/
+node_modules/
+.next/
+apps/**/dist/
+apps/desktop/release/
+apps/web/test-results/
+apps/web/playwright-report/

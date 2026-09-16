@@ -19,6 +19,25 @@ OPENCODE_API_KEY=sk-...
 
 Get a key from [OpenCode auth](https://opencode.ai/auth) after subscribing to Go.
 
+## Desktop IDE (Electron)
+
+```powershell
+npm install
+npm run dev
+```
+
+Opens an Electron window (Vite UI on `127.0.0.1:5173`, no Nest server). Pick a folder or set `WORKSPACE_ROOT`. Agent runs need `OPENCODE_API_KEY` and `.venv`.
+
+Windows installer:
+
+```powershell
+npm run dist
+```
+
+Output is under `apps/desktop/release`.
+
+Path-safety tests: `npm run test:desktop`. Worker: `python -m pytest tests/test_harness_worker.py`. Electron file-open smoke (Vite already running): `$env:RUN_ELECTRON=1; npm run test:e2e --workspace=@harness/web`.
+
 ## Smoke test
 
 ```powershell
@@ -59,6 +78,52 @@ Keep the graph current (new commits → extract → MERGE into SQLite → PageRa
 ```powershell
 python -m adaptive_agent.graph_sync --repo C:\path\to\some-other-project
 python -m adaptive_agent.graph_sync --repo C:\path\to\some-other-project --interval 60
+```
+
+## L4 retrieval
+
+Audit/dedup the graph, then compare **keyword** search vs **anchor + PageRank** (the L4 notebook loop, without Oracle):
+
+```powershell
+python lessons/l4_code_graph.py
+python lessons/l4_code_graph.py --repo C:\path\to\some-other-project
+```
+
+## Visual graph
+
+Open an interactive HTML view (files, symbols, import / contains / call / co_edit, optional query walk):
+
+```powershell
+python -m adaptive_agent.graph_viz
+python -m adaptive_agent.graph_viz --query "where do we verify a token?"
+python -m adaptive_agent.graph_viz --repo C:\path\to\some-other-project
+python -m adaptive_agent.graph_viz --repo C:\path\to\some-other-project --query "where is autoplay defined?"
+```
+
+## Tests
+
+Unit tests (no API key, no live LLM):
+
+```powershell
+pip install -r requirements.txt
+python -m pytest -q
+```
+
+L4 retrieval eval (multi-hop vs similarity, keywords vs code KG vs code KG sem):
+
+```powershell
+python lessons/l4_code_graph.py
+```
+
+## Adapter router
+
+Frozen base model (OpenCode Go / DeepSeek Flash). The router snaps a small adapter onto it per task (`coding`, `refuse_unknowns`, `polite_persona`, `brand_voice`):
+
+```powershell
+python -m adaptive_agent.router "guess the unknown password"
+python -m adaptive_agent.router "write a polite thank-you to the customer"
+python -m adaptive_agent.router "landing page headline and brand tagline"
+python -m adaptive_agent.router "implement the hash function" --run
 ```
 
 ## Config

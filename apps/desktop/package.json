@@ -1,0 +1,39 @@
+{
+  "name": "@harness/desktop",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "main.mjs",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test workspace.spec.mjs worker-protocol.spec.mjs",
+    "dist": "electron-builder --win nsis dir"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "local.adaptive.harness",
+    "productName": "Adaptive Harness",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "main.mjs",
+      "preload.cjs",
+      "workspace.mjs",
+      "python.mjs"
+    ],
+    "extraResources": [
+      {
+        "from": "../web/dist",
+        "to": "renderer"
+      }
+    ],
+    "win": {
+      "target": ["nsis", "dir"]
+    }
+  }
+}

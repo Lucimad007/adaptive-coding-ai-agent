@@ -19,7 +19,7 @@ def sync_once(repo: Path, db: GraphDB) -> str:
 
     since = last if last and last != "NOGIT" else None
     graph = build_code_graph(repo, since_commit=since)
-    append = {"coedit"} if last else set()
+    append = {"co_edit"} if last else set()
     db.merge(str(repo), graph, append_kinds=append)
     stored = db.load_graph(str(repo))
     ranks = pagerank(stored)

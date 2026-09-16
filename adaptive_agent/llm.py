@@ -14,7 +14,7 @@ OPENCODE_BASE_URL = os.getenv("OPENCODE_BASE_URL", "https://opencode.ai/zen/go/v
 OPENCODE_MODEL = os.getenv("OPENCODE_MODEL", "deepseek-flash")
 
 
-def build_llm(*, temperature: float = 0.2) -> ChatOpenAI:
+def build_llm(*, temperature: float = 0.2, model: str | None = None) -> ChatOpenAI:
     api_key = os.getenv("OPENCODE_API_KEY")
     if not api_key:
         raise SystemExit(
@@ -23,7 +23,7 @@ def build_llm(*, temperature: float = 0.2) -> ChatOpenAI:
 
     session_id = os.getenv("OPENCODE_SESSION") or str(uuid.uuid4())
     return ChatOpenAI(
-        model=OPENCODE_MODEL,
+        model=model or OPENCODE_MODEL,
         api_key=api_key,
         base_url=OPENCODE_BASE_URL,
         temperature=temperature,

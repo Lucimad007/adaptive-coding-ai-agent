@@ -1,0 +1,19 @@
+{
+  "name": "adaptive-ai-agent",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n web,desk -c green,magenta \"npm run dev --workspace=@harness/web\" \"wait-on tcp:127.0.0.1:5173 && npm run start --workspace=@harness/desktop\"",
+    "dev:web": "npm run dev --workspace=@harness/web",
+    "dev:desktop": "npm run start --workspace=@harness/desktop",
+    "test:desktop": "npm test --workspace=@harness/desktop",
+    "dist": "npm run build --workspace=@harness/web && npm run dist --workspace=@harness/desktop"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0",
+    "wait-on": "^8.0.1"
+  }
+}

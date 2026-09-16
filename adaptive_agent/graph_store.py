@@ -171,26 +171,34 @@ def pagerank(
     *,
     damping: float = 0.85,
     iterations: int = 30,
+    personalize: dict[str, float] | None = None,
 ) -> dict[str, float]:
     nodes = list(graph.nodes)
     if not nodes:
         return {}
     n = len(nodes)
     index = {node_id: i for i, node_id in enumerate(nodes)}
+    if personalize:
+        mass = [float(personalize.get(node_id, 0.0)) for node_id in nodes]
+        total = sum(mass) or 1.0
+        restart = [v / total for v in mass]
+    else:
+        restart = [1.0 / n] * n
+
     outbound: dict[str, list[tuple[str, float]]] = defaultdict(list)
     for edge in graph.edges.values():
         outbound[edge.source].append((edge.target, edge.weight))
 
-    rank = [1.0 / n] * n
+    rank = list(restart)
     for _ in range(iterations):
-        nxt = [(1.0 - damping) / n] * n
+        nxt = [(1.0 - damping) * r for r in restart]
         for src, targets in outbound.items():
-            total = sum(w for _, w in targets) or 1.0
+            total_w = sum(w for _, w in targets) or 1.0
             i = index[src]
             share = damping * rank[i]
             for dst, weight in targets:
-                nxt[index[dst]] += share * (weight / total)
+                nxt[index[dst]] += share * (weight / total_w)
         dangling = [node_id for node_id in nodes if node_id not in outbound]
-        extra = damping * sum(rank[index[d]] for d in dangling) / n
-        rank = [v + extra for v in nxt]
+        extra = damping * sum(rank[index[d]] for d in dangling)
+        rank = [v + extra * restart[i] for i, v in enumerate(nxt)]
     return {node_id: rank[index[node_id]] for node_id in nodes}

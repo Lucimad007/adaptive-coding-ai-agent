@@ -10,8 +10,10 @@ from langchain_core.messages import HumanMessage
 from langchain_core.tools import tool
 
 from adaptive_agent.code_graph import build_code_graph, save_graph
+from adaptive_agent.graph_retrieve import graph_retrieve
 from adaptive_agent.graph_store import GraphDB
 from adaptive_agent.graph_sync import sync_once
+from adaptive_agent.graph_viz import write_anchor_walk_html, write_graph_html
 from adaptive_agent.llm import build_llm
 from adaptive_agent.memory import ROOT
 
@@ -32,8 +34,9 @@ def extract_code_graph(repo_path: str) -> str:
 
     Creates three relation types:
     - import: file A imports file B
-    - calls: function/file A calls function B
-    - coedit: files changed together in git history
+    - call: function X calls function Y
+    - co_edit: files changed together in git
+    - contains: file contains a function
 
     Pass the path of the codebase to analyze, not this agent project unless asked.
     """
@@ -42,17 +45,17 @@ def extract_code_graph(repo_path: str) -> str:
     slug = root.name.replace(" ", "_")
     out = ROOT / "data" / "graphs" / f"{slug}.json"
     save_graph(graph, out)
-    return f"Extracted graph for {root}\n{graph.summary()}\nSaved {out}"
+    return f"Extracted graph for {root}\n{graph.remembered_summary(root.name)}\nSaved {out}"
 
 
 @tool
 def list_graph_edges(repo_path: str, kind: str = "import", limit: int = 25) -> str:
-    """List extracted edges of one kind: import, calls, coedit, or defines."""
+    """List extracted edges of one kind: import, call, co_edit, or contains."""
     _, graph = _load(repo_path)
-    kind = kind.strip().lower()
+    kind = kind.strip().lower().replace("calls", "call").replace("coedit", "co_edit").replace("defines", "contains")
     rows = [e for e in graph.edges.values() if e.kind == kind]
     if not rows:
-        return f"No {kind} edges. Known kinds: import, calls, coedit, defines."
+        return f"No {kind} edges. Known kinds: import, call, co_edit, contains."
     lines = [f"{kind} edges: {len(rows)}"]
     for edge in rows[: max(1, limit)]:
         lines.append(f"{edge.source} -> {edge.target}  w={edge.weight:g}")
@@ -81,6 +84,33 @@ def graph_neighbors(repo_path: str, query: str, limit: int = 15) -> str:
 
 
 @tool
+def retrieve_from_graph(repo_path: str, query: str, k: int = 5) -> str:
+    """Two-step retrieval: lexical anchor, then personalized PageRank over import/call/co_edit edges."""
+    _, graph = _load(repo_path)
+    result = graph_retrieve(graph, query, k=k, n_anchors=1)
+    lines = [f"query: {query}", "anchors: " + ", ".join(a.id for a in result["anchors"])]
+    lines.append("keyword:")
+    for node, score in result["keyword"]:
+        lines.append(f"  {score:.4f}  {node.id}")
+    lines.append("anchor + PageRank:")
+    for node, score in result["hits"]:
+        lines.append(f"  {score:.4f}  {node.id}")
+    return "\n".join(lines)
+
+
+@tool
+def visualize_code_graph(repo_path: str, query: str = "") -> str:
+    """Write an interactive HTML graph and return its path. Pass query to highlight the anchor walk."""
+    root, graph = _load(repo_path)
+    out = ROOT / "data" / "graphs" / f"{root.name}.html"
+    if query.strip():
+        path = write_anchor_walk_html(graph, query.strip(), out)
+    else:
+        path = write_graph_html(graph, out, title=f"Code knowledge graph: {root.name}")
+    return f"Open this file in a browser: {path}"
+
+
+@tool
 def sync_code_graph(repo_path: str) -> str:
     """Run one adaptation cycle on a target repo.
 
@@ -96,11 +126,11 @@ def sync_code_graph(repo_path: str) -> str:
 def build_graph_agent():
     return create_agent(
         model=build_llm(),
-        tools=[extract_code_graph, list_graph_edges, graph_neighbors, sync_code_graph],
+        tools=[extract_code_graph, list_graph_edges, graph_neighbors, retrieve_from_graph, visualize_code_graph, sync_code_graph],
         system_prompt=(
             "You are a code-graph agent. The user gives a path to SOME OTHER codebase "
             "and a question. First extract_code_graph on that path, then use "
-            "list_graph_edges and graph_neighbors to answer. Use sync_code_graph when "
+            "list_graph_edges, graph_neighbors, and retrieve_from_graph to answer. Use sync_code_graph when "
             "the codebase may have new commits and the graph should merge + re-rank. "
             "Explain import, call, and co-edit relations. Do not assume the repo is this "
             "adaptive-ai-agent project unless the user passes that path."

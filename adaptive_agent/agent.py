@@ -8,6 +8,7 @@ from langchain_core.tools import tool
 
 from adaptive_agent.llm import build_llm
 from adaptive_agent.memory import Memory
+from adaptive_agent.router import route_task
 from adaptive_agent.skills import SkillBox
 
 _DEPS_INSTALLED = False
@@ -35,13 +36,15 @@ def run_tests(install_deps: bool = False) -> str:
     return "OK: 12 passed"
 
 
-def build_skill_agent(skill_text: str | None = None):
+def build_skill_agent(skill_text: str | None = None, *, task: str = ""):
     skill_block = skill_text or "No skill retrieved. Use tools as needed."
+    chosen = route_task(task or "code")
     return create_agent(
-        model=build_llm(),
+        model=build_llm(model=chosen.model, temperature=chosen.adapter.temperature),
         tools=[run_tests],
         system_prompt=(
-            "You are a coding assistant. Follow the retrieved skill exactly.\n\n"
+            f"{chosen.system_prompt}\n\n"
+            "Follow the retrieved skill exactly.\n\n"
             f"## Retrieved skill\n{skill_block}"
         ),
     )
@@ -51,7 +54,7 @@ def run_task(task: str, box: SkillBox, mem: Memory | None = None, topic: str = "
     hits = box.search(task, k=1)
     skill = hits[0][0] if hits else None
     skill_text = skill.body if skill else None
-    agent = build_skill_agent(skill_text)
+    agent = build_skill_agent(skill_text, task=task)
     result = agent.invoke({"messages": [HumanMessage(content=task)]})
     messages = result["messages"]
     final = messages[-1].content
