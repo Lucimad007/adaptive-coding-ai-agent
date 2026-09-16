@@ -3,14 +3,10 @@ import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { FileTypeIcon } from "@/lib/files";
+import type { FileEntry } from "@/lib/fileEntry";
 import { gitNameClass, gitStatusAccentClass, gitStatusDotClass, gitStatusLetter, gitStatusTitle, type GitStatus } from "@/lib/gitStatus";
 
-export type FileEntry = {
-  path: string;
-  name: string;
-  kind: "file" | "dir";
-  children?: FileEntry[];
-};
+export type { FileEntry } from "@/lib/fileEntry";
 
 export default function FileTree({
   entries,

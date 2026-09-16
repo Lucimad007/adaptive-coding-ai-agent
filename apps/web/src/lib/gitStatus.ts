@@ -1,4 +1,4 @@
-import type { FileEntry } from "@/components/FileTree";
+import type { FileEntry } from "./fileEntry";
 
 export type GitStatus = "clean" | "modified" | "untracked" | "added" | "deleted" | "renamed";
 

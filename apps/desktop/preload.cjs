@@ -22,7 +22,7 @@ contextBridge.exposeInMainWorld("harness", {
   diffs: () => ipcRenderer.invoke("diffs:list"),
   rejectDiffs: () => ipcRenderer.invoke("diffs:reject"),
   pickWorkspace: () => ipcRenderer.invoke("workspace:pick"),
-  startAgent: (prompt) => ipcRenderer.invoke("agent:start", prompt),
+  startAgent: (prompt, opts) => ipcRenderer.invoke("agent:start", prompt, opts || {}),
   abortAgent: () => ipcRenderer.invoke("agent:abort"),
   onAgentEvent: (cb) => {
     const handler = (_e, ev) => cb(ev);

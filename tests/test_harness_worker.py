@@ -5,7 +5,16 @@ import sys
 
 import pytest
 
-from adaptive_agent.harness_worker import _safe, make_tools
+from adaptive_agent.harness_worker import _chunk_text, _safe, make_tools
+
+
+def test_chunk_text_plain_and_blocks():
+    class Msg:
+        def __init__(self, content):
+            self.content = content
+
+    assert _chunk_text(Msg("hi")) == "hi"
+    assert _chunk_text(Msg([{"type": "text", "text": "a"}, {"type": "text", "text": "b"}])) == "ab"
 
 
 def test_worker_rejects_traversal(tmp_path: Path):
@@ -40,3 +49,15 @@ def test_apply_patch_roundtrip(tmp_path: Path):
     out = tools["apply_patch"].invoke({"path": "a.py", "old": "world", "new": "there"})
     assert "patched" in out
     assert target.read_text(encoding="utf-8") == "hello there\n"
+
+
+def test_read_missing_file_returns_error(tmp_path: Path):
+    tools = {t.name: t for t in make_tools(tmp_path)}
+    out = tools["read_file"].invoke({"path": "README.md"})
+    assert "not found" in out.lower()
+
+
+def test_list_dir_empty(tmp_path: Path):
+    tools = {t.name: t for t in make_tools(tmp_path)}
+    out = tools["list_dir"].invoke({"path": "."})
+    assert "empty" in out.lower()

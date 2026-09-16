@@ -193,19 +193,24 @@ ipcMain.handle("workspace:pick", async () => {
   setWorkspaceRoot(result.filePaths[0]);
   return { root: workspaceRoot() };
 });
-ipcMain.handle("agent:start", (_e, prompt) => {
-  if (agentProc) {
-    agentProc.kill();
+ipcMain.handle("agent:start", (_e, prompt, opts = {}) => {
+  const prev = agentProc;
+  if (prev) {
+    prev.kill();
     agentProc = null;
   }
   const proc = spawn(pythonBin(), ["-m", "adaptive_agent.harness_worker", "run"], {
     cwd: REPO_ROOT,
-    env: { ...process.env, PYTHONPATH: REPO_ROOT },
+    env: { ...process.env, PYTHONPATH: REPO_ROOT, PYTHONUNBUFFERED: "1" },
   });
   agentProc = proc;
+  let stdoutBuf = "";
   proc.stdout.setEncoding("utf8");
   proc.stdout.on("data", (chunk) => {
-    for (const line of chunk.split(/\r?\n/)) {
+    stdoutBuf += chunk;
+    const lines = stdoutBuf.split(/\r?\n/);
+    stdoutBuf = lines.pop() ?? "";
+    for (const line of lines) {
       if (!line.trim()) continue;
       try {
         win?.webContents.send("agent:event", JSON.parse(line));
@@ -216,15 +221,36 @@ ipcMain.handle("agent:start", (_e, prompt) => {
   });
   proc.stderr.setEncoding("utf8");
   proc.stderr.on("data", (chunk) => {
-    win?.webContents.send("agent:event", { type: "error", message: chunk });
+    const text = String(chunk);
+    if (!text.trim()) return;
+    if (/traceback/i.test(text) || /error:/i.test(text) || /Error/i.test(text)) {
+      win?.webContents.send("agent:event", { type: "error", message: text });
+    }
+  });
+  proc.on("error", (err) => {
+    win?.webContents.send("agent:event", { type: "error", message: String(err) });
+    win?.webContents.send("agent:event", { type: "done" });
   });
   proc.on("close", () => {
-    win?.webContents.send("agent:event", { type: "done" });
-    agentProc = null;
+    if (agentProc === proc) {
+      win?.webContents.send("agent:event", { type: "done" });
+      agentProc = null;
+    }
   });
-  proc.stdin.write(
-    JSON.stringify({ type: "start_run", workspace: workspaceRoot(), prompt }) + "\n",
-  );
+  const payload = JSON.stringify({
+    type: "start_run",
+    workspace: workspaceRoot(),
+    prompt,
+    history: Array.isArray(opts.history) ? opts.history : [],
+  });
+  win?.webContents.send("agent:event", { type: "status", text: "running" });
+  proc.stdin.write(payload + "\n", "utf8", () => {
+    try {
+      proc.stdin.end();
+    } catch {
+      /* already closed */
+    }
+  });
   return { ok: true };
 });
 ipcMain.handle("agent:abort", () => {

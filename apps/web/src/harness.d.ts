@@ -3,6 +3,8 @@ export type AgentEvent = {
   text?: string;
   name?: string;
   message?: string;
+  path?: string;
+  op?: string;
   steps?: unknown[];
   nodes?: unknown[];
   edges?: unknown[];
@@ -30,7 +32,7 @@ export type HarnessApi = {
   diffs: () => Promise<{ diffs: { path: string; before: string; after: string }[] }>;
   rejectDiffs: () => Promise<{ ok: boolean }>;
   pickWorkspace: () => Promise<{ root: string }>;
-  startAgent: (prompt: string) => Promise<{ ok: boolean }>;
+  startAgent: (prompt: string, opts?: { history?: { role: string; text: string }[] }) => Promise<{ ok: boolean }>;
   abortAgent: () => Promise<{ ok: boolean }>;
   onAgentEvent: (cb: (ev: AgentEvent) => void) => () => void;
   termOpen: (size?: { cols: number; rows: number }) => Promise<{ ok: boolean }>;
