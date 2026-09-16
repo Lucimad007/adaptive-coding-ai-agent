@@ -45,6 +45,33 @@ let win = null;
 let agentProc = null;
 let termSender = null;
 
+function runSkills(payload) {
+  return new Promise((resolve, reject) => {
+    const proc = spawn(pythonBin(), ["-m", "adaptive_agent.harness_worker", "skills"], {
+      cwd: REPO_ROOT,
+      env: { ...process.env, PYTHONPATH: REPO_ROOT, PYTHONUNBUFFERED: "1", PYTHONIOENCODING: "utf-8" },
+    });
+    let out = "";
+    let err = "";
+    proc.stdout.setEncoding("utf8");
+    proc.stdout.on("data", (d) => (out += d.toString()));
+    proc.stderr.on("data", (d) => (err += d.toString()));
+    proc.on("close", (code) => {
+      if (code !== 0) reject(new Error(err || `worker exit ${code}`));
+      else {
+        try {
+          resolve(JSON.parse(out.trim().split(/\r?\n/).pop() || "{}"));
+        } catch {
+          reject(new Error(out || "skills parse"));
+        }
+      }
+    });
+    proc.on("error", reject);
+    proc.stdin.write(JSON.stringify(payload));
+    proc.stdin.end();
+  });
+}
+
 function runWorker(args) {
   return new Promise((resolve, reject) => {
     const proc = spawn(pythonBin(), ["-m", "adaptive_agent.harness_worker", ...args], {
@@ -207,26 +234,40 @@ function createWindow() {
   win.on("unmaximize", sendMax);
 }
 
-ipcMain.handle("files:tree", () => ({ tree: tree() }));
-ipcMain.handle("git:status", async () => ({ files: await gitStatusFiles() }));
-ipcMain.handle("files:read", (_e, rel) => ({ path: rel, content: readFile(rel) }));
-ipcMain.handle("files:write", (_e, rel, content) => {
+function handleIpc(channel, fn) {
+  try {
+    ipcMain.removeHandler(channel);
+  } catch {
+    /* first register */
+  }
+  ipcMain.handle(channel, fn);
+}
+handleIpc("files:tree", () => ({ tree: tree() }));
+handleIpc("git:status", async () => ({ files: await gitStatusFiles() }));
+handleIpc("files:read", (_e, rel) => {
+  try {
+    return { path: rel, content: readFile(rel) };
+  } catch (err) {
+    return { path: rel, content: "", error: String(err.message || err) };
+  }
+});
+handleIpc("files:write", (_e, rel, content) => {
   writeFile(rel, content);
   return { ok: true, path: rel };
 });
-ipcMain.handle("graph:get", async () => {
+handleIpc("graph:get", async () => {
   const raw = await runWorker(["graph", "--workspace", workspaceRoot()]);
   return JSON.parse(raw);
 });
-ipcMain.handle("graph:retrieve", async (_e, query) => {
+handleIpc("graph:retrieve", async (_e, query) => {
   const args = query
     ? ["retrieve", "--query", query, "--workspace", workspaceRoot()]
     : ["graph", "--workspace", workspaceRoot()];
   const raw = await runWorker(args);
   return JSON.parse(raw);
 });
-ipcMain.handle("diffs:list", async () => ({ diffs: await gitDiffs() }));
-ipcMain.handle("diffs:reject", async (_e, rel) => {
+handleIpc("diffs:list", async () => ({ diffs: await gitDiffs() }));
+handleIpc("diffs:reject", async (_e, rel) => {
   if (rel) {
     await revertWorkspaceFile(rel);
     return { ok: true, path: rel };
@@ -241,7 +282,27 @@ ipcMain.handle("diffs:reject", async (_e, rel) => {
   }
   return { ok: true };
 });
-ipcMain.handle("workspace:pick", async () => {
+handleIpc("skills:trace", async (_e, rel, task) => {
+  const result = await runSkills({
+    action: "trace",
+    workspace: workspaceRoot(),
+    path: rel,
+    task: task || "",
+  });
+  if (result?.skill) win?.webContents.send("agent:event", result.skill);
+  return result;
+});
+handleIpc("skills:review", (_e, opts) =>
+  runSkills({
+    action: "review",
+    name: opts?.name,
+    version: opts?.version,
+    approve: !!opts?.approve,
+    reason: opts?.reason || "",
+  }),
+);
+handleIpc("skills:pending", () => runSkills({ action: "pending" }));
+handleIpc("workspace:pick", async () => {
   const result = await dialog.showOpenDialog(win, { properties: ["openDirectory"] });
   if (result.canceled || !result.filePaths[0]) return { root: workspaceRoot() };
   setWorkspaceRoot(result.filePaths[0]);

@@ -17,8 +17,18 @@ from langchain_core.tools import tool
 from adaptive_agent.code_graph import build_code_graph
 from adaptive_agent.graph_retrieve import graph_retrieve
 from adaptive_agent.llm import build_llm
-from adaptive_agent.memory import ROOT
+from adaptive_agent.memory import DEFAULT_DB, Memory, ROOT
 from adaptive_agent.router import route_task
+from adaptive_agent.skill_loop import (
+    coding_topic,
+    maybe_induce,
+    propose_pending_skill,
+    record_run_episode,
+    retrieved_skills_block,
+    tool_result_failed,
+    wait_for_skill_review,
+)
+from adaptive_agent.skills import SkillBox
 
 SKIP = {".git", ".venv", "node_modules", ".next", "dist", "__pycache__"}
 PLAN_SKILL = (ROOT / "skills" / "writing-plans-v1.md").read_text(encoding="utf-8")
@@ -119,7 +129,34 @@ def _read_text(target: Path) -> str:
         return f"error: {exc}"
 
 
-def make_tools(workspace: Path):
+def _skill_rel(path: str) -> bool:
+    rel = path.replace("\\", "/").lstrip("/")
+    return rel.startswith("skills/") and rel.endswith(".md")
+
+
+def _emit_proposed_skill(event: dict, *, wait: bool) -> str:
+    emit(event)
+    emit({"type": "status", "text": "waiting for skill approval"})
+    if not wait:
+        return (
+            f"proposed skill {event.get('name')} v{event.get('version')} "
+            "(waiting for Accept in Patchline chat). Do not treat it as active yet."
+        )
+    status = wait_for_skill_review(
+        name=str(event.get("name")),
+        version=int(event.get("version") or 1),
+        db_path=event.get("db_path"),
+        timeout=300,
+    )
+    if status == "active":
+        return f"user accepted skill {event.get('name')} v{event.get('version')}. Follow it from now on."
+    if status == "rejected":
+        return f"user rejected skill {event.get('name')}. Do not follow or rewrite it."
+    return f"skill {event.get('name')} still pending (no decision yet). Stop and wait."
+
+
+def make_tools(workspace: Path, db_path: Path | None = None, wait_skills: bool = False):
+    skill_db = db_path or DEFAULT_DB
     @tool
     def list_dir(path: str = ".") -> str:
         """List files and folders in a workspace directory."""
@@ -157,6 +194,10 @@ def make_tools(workspace: Path):
             target = _safe(workspace, path)
         except ValueError as exc:
             return f"error: {exc}"
+        if _skill_rel(path):
+            stem = Path(path.replace("\\", "/")).stem
+            event = propose_pending_skill(name=stem, body=content, db_path=skill_db)
+            return _emit_proposed_skill(event, wait=wait_skills)
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(content, encoding="utf-8")
@@ -173,6 +214,17 @@ def make_tools(workspace: Path):
             target = _safe(workspace, path)
         except ValueError as exc:
             return f"error: {exc}"
+        if _skill_rel(path):
+            text = _read_text(target)
+            if text.startswith("error:"):
+                body = new
+            elif old not in text:
+                return "old text not found"
+            else:
+                body = text.replace(old, new, 1)
+            stem = Path(path.replace("\\", "/")).stem
+            event = propose_pending_skill(name=stem, body=body, db_path=skill_db)
+            return _emit_proposed_skill(event, wait=wait_skills)
         text = _read_text(target)
         if text.startswith("error:"):
             return text
@@ -268,11 +320,17 @@ def make_tools(workspace: Path):
         emit({"type": "todos", "todos": items})
         return f"updated {len(items)} todos"
 
-    return [list_dir, read_file, write_file, apply_patch, grep, run_command, search_graph, update_todos]
+    @tool
+    def propose_skill(name: str, body: str, rationale: str = "") -> str:
+        """Propose a reusable skill. The user must Accept it in Patchline chat before it is active."""
+        event = propose_pending_skill(name=name, body=body, rationale=rationale, db_path=skill_db)
+        return _emit_proposed_skill(event, wait=wait_skills)
+
+    return [list_dir, read_file, write_file, apply_patch, grep, run_command, search_graph, update_todos, propose_skill]
 
 
 def tools_for_mode(workspace: Path, chat_mode: str):
-    tools = {t.name: t for t in make_tools(workspace)}
+    tools = {t.name: t for t in make_tools(workspace, wait_skills=True)}
     if chat_mode == "chat":
         names = ("list_dir", "read_file", "search_graph", "update_todos")
     elif chat_mode == "plan":
@@ -287,6 +345,7 @@ def tools_for_mode(workspace: Path, chat_mode: str):
             "run_command",
             "search_graph",
             "update_todos",
+            "propose_skill",
         )
     return [tools[n] for n in names if n in tools]
 
@@ -296,7 +355,7 @@ MODE_PROMPT = {
         "AGENT MODE: use tools. Call update_todos first with a JSON list of concrete steps "
         "(id, content, status), mark one in_progress, complete them as you go. "
         "Prefer list_dir or search_graph, then read_file. If a file is missing, write_file. "
-        "When the user asks to add a file, write it with write_file."
+        "When the user asks to add a file, write it with write_file. When the user asks to add a skill, call propose_skill. Never write skills/*.md as already-active; the user must Accept in chat."
     ),
     "plan": (
         "PLAN MODE: read-only. Inspect with list_dir/read_file/grep/search_graph. "
@@ -376,17 +435,27 @@ def run_coding_agent(workspace: Path, prompt: str, history: list | None = None, 
     chat_mode = chat_mode if chat_mode in MODE_PROMPT else "agent"
     chosen = route_task("implement code " + prompt)
     tools = tools_for_mode(workspace, chat_mode)
+    box = SkillBox(DEFAULT_DB)
+    try:
+        box.seed_from_files()
+        skill_block = retrieved_skills_block(box, prompt)
+    except Exception:
+        skill_block = ""
     agent = create_agent(
         model=build_llm(model=chosen.model, temperature=0.2 if chat_mode != "chat" else 0.4),
         tools=tools,
         system_prompt=(
             f"{chosen.system_prompt}\n\n{PLAN_SKILL}\n\n"
             f"{MODE_PROMPT[chat_mode]}\n"
+            f"{skill_block}\n"
             f"## Graph hits\n{ctx}"
         ),
     )
     tools_used: list[str] = []
+    tool_calls: list[dict] = []
     seen_tools: set[str] = set()
+    failed = False
+    error_bits: list[str] = []
     reply_parts: list[str] = []
     messages = _history_messages(history)
     if not messages or getattr(messages[-1], "content", None) != prompt:
@@ -408,6 +477,7 @@ def run_coding_agent(workspace: Path, prompt: str, history: list | None = None, 
                 seen_tools.add(tid)
                 tools_used.append(name)
                 args = (call.get("args") if isinstance(call, dict) else getattr(call, "args", None)) or {}
+                tool_calls.append({"name": name, "args": args})
                 emit({"type": "tool", "name": name, "args": args})
             text = _chunk_text(token)
             if text:
@@ -415,6 +485,28 @@ def run_coding_agent(workspace: Path, prompt: str, history: list | None = None, 
                 emit({"type": "token", "text": text})
         elif stream_mode == "updates" and isinstance(data, dict) and "tools" in data:
             emit(_plan(inspect="done", edit="active"))
+            for msg in _tool_messages(data["tools"]):
+                content = _chunk_text(msg) or str(getattr(msg, "content", "") or "")
+                if tool_result_failed(content):
+                    failed = True
+                    error_bits.append(content[:400])
+    if chat_mode != "chat":
+        try:
+            mem = Memory(DEFAULT_DB)
+            record_run_episode(
+                mem,
+                workspace=workspace,
+                task=prompt,
+                tool_calls=tool_calls,
+                failed=failed,
+                error="; ".join(error_bits)[:800] if error_bits else None,
+            )
+            if failed:
+                event = maybe_induce(mem, box, topic=coding_topic(workspace), prompt=prompt)
+                if event:
+                    emit(event)
+        except Exception as exc:
+            emit({"type": "error", "message": f"skill loop: {exc}"})
     emit(_plan(inspect="done", edit="done"))
     emit({"type": "done"})
     reply = "".join(reply_parts)
@@ -424,6 +516,26 @@ def run_coding_agent(workspace: Path, prompt: str, history: list | None = None, 
         "tools": tools_used,
         "reply": reply,
     }
+
+
+def _tool_messages(tools_update) -> list:
+    if isinstance(tools_update, dict):
+        msgs = tools_update.get("messages") or []
+        return list(msgs) if isinstance(msgs, list) else [msgs]
+    if isinstance(tools_update, list):
+        return tools_update
+    return []
+
+
+def cmd_skills() -> None:
+    from adaptive_agent.skill_loop import handle_skills_cmd
+
+    line = sys.stdin.readline()
+    if not line.strip():
+        print(json.dumps({"ok": False, "error": "empty"}))
+        return
+    msg = _sanitize(json.loads(line))
+    print(json.dumps(handle_skills_cmd(msg)))
 
 
 def cmd_run() -> None:
@@ -447,7 +559,7 @@ def cmd_run() -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("cmd", choices=("graph", "retrieve", "run"))
+    parser.add_argument("cmd", choices=("graph", "retrieve", "run", "skills"))
     parser.add_argument("--query", default="")
     parser.add_argument("--workspace", default=str(ROOT))
     args = parser.parse_args()
@@ -456,6 +568,8 @@ def main() -> None:
         cmd_graph(workspace)
     elif args.cmd == "retrieve":
         cmd_retrieve(workspace, args.query or "code")
+    elif args.cmd == "skills":
+        cmd_skills()
     else:
         cmd_run()
 

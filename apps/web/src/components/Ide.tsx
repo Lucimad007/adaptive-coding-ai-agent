@@ -36,11 +36,15 @@ import { AnimatedShinyText } from "@/components/ui/animated-shiny-text";
 type PlanStep = { id: string; text: string; status: string };
 type ChatMsg = {
   id: string;
-  role: "user" | "assistant" | "tool" | "error";
+  role: "user" | "assistant" | "tool" | "error" | "skill";
   text: string;
   streaming?: boolean;
   name?: string;
   args?: Record<string, unknown>;
+  version?: number;
+  body?: string;
+  rationale?: string;
+  status?: string;
 };
 type AgentMode = "agent" | "plan" | "chat";
 type TodoItem = { id: string; content: string; status: "pending" | "in_progress" | "completed" };
@@ -161,6 +165,7 @@ export default function Ide() {
   const [diffIdx, setDiffIdx] = useState(0);
   const [mode, setMode] = useState<"edit" | "preview" | "diff">("preview");
   const [graphFull, setGraphFull] = useState(false);
+  const [pendingSkills, setPendingSkills] = useState<ChatMsg[]>([]);
   const chatEnd = useRef<HTMLDivElement>(null);
   const lang = monacoLanguage(mode === "diff" && diffs[diffIdx] ? diffs[diffIdx].path : path);
 
@@ -213,6 +218,63 @@ export default function Ide() {
     await refreshGitStatus();
   }
 
+  function rememberSkill(ev: { name?: string; version?: number; body?: string; rationale?: string; status?: string }) {
+    if (!ev?.name) return;
+    const msg: ChatMsg = {
+      id: `${ev.name}@${ev.version ?? 1}`,
+      role: "skill",
+      text: ev.name,
+      name: ev.name,
+      version: ev.version,
+      body: ev.body,
+      rationale: ev.rationale,
+      status: ev.status || "pending",
+    };
+    setPendingSkills((list) => (list.some((s) => s.id === msg.id) ? list : [...list, msg]));
+    const chatId = activeChatIdRef.current;
+    patchSession(chatId, (s) => {
+      const key = msg.id;
+      if (s.log.some((m) => m.role === "skill" && `${m.name}@${m.version}` === key)) return s;
+      return { ...s, log: [...s.log, { ...msg, id: crypto.randomUUID() }] };
+    });
+  }
+
+  async function refreshPendingSkills() {
+    try {
+      const data = await api().skillsPending?.();
+      for (const ev of data?.skills || []) rememberSkill(ev);
+    } catch {
+      /* optional */
+    }
+  }
+
+  async function reviewPendingSkill(msg: ChatMsg, approve: boolean) {
+    try {
+      const result = await api().skillReview?.({
+        name: msg.name || "",
+        version: msg.version || 1,
+        approve,
+        reason: approve ? "accepted in Patchline" : "rejected in Patchline",
+      });
+      if (result && result.ok === false) throw new Error(result.error || "review failed");
+    } catch (err) {
+      patchSession(activeChatIdRef.current, (s) => ({
+        ...s,
+        log: [...s.log, { id: crypto.randomUUID(), role: "error", text: `Skill review failed: ${err}` }],
+      }));
+      return;
+    }
+    setPendingSkills((list) => list.filter((s) => s.id !== msg.id && `${s.name}@${s.version}` !== `${msg.name}@${msg.version}`));
+    patchSession(activeChatIdRef.current, (s) => ({
+      ...s,
+      log: s.log.map((row) =>
+        row.role === "skill" && row.name === msg.name && row.version === msg.version
+          ? { ...row, status: approve ? "active" : "rejected" }
+          : row,
+      ),
+    }));
+  }
+
   async function loadDiffs(enterReview = true) {
     try {
       const data = await api().diffs();
@@ -249,6 +311,13 @@ export default function Ide() {
     const d = diffs[diffIdx];
     if (!d) return;
     await api().rejectDiffs(d.path);
+    try {
+      const traced = await api().skillTrace?.(d.path, d.path);
+      if (traced?.skill) rememberSkill(traced.skill);
+      else await refreshPendingSkills();
+    } catch {
+      /* worker optional */
+    }
     if (path === d.path) {
       try {
         const data = await api().read(d.path);
@@ -398,6 +467,7 @@ export default function Ide() {
         openFile("README.md").catch(() => undefined);
       }
     })();
+    void refreshPendingSkills();
     const off = api().onAgentEvent((ev) => {
       const chatId = activeChatIdRef.current;
       if (ev.type === "token") {
@@ -466,6 +536,7 @@ export default function Ide() {
           anchorId: ev.anchorId as string | undefined,
         });
       }
+      if (ev.type === "skill") rememberSkill(ev);
       if (ev.type === "fs") void loadTree();
       if (ev.type === "done") {
         setAgentBusy(false);
@@ -476,6 +547,7 @@ export default function Ide() {
         }));
         loadDiffs(true);
         void loadTree();
+        void refreshPendingSkills();
       }
     });
     return () => off();
@@ -741,6 +813,16 @@ export default function Ide() {
                 </div>
               </div>
               <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+                {pendingSkills.length > 0 ? (
+                  <div className="shrink-0 space-y-2 border-b border-primary/40 bg-[#2ea04314] px-3 py-2">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-foreground">
+                      Approve skill? This will teach the agent for the next run.
+                    </p>
+                    {pendingSkills.map((msg) => (
+                      <SkillCard key={msg.id} msg={msg} onReview={(approve) => reviewPendingSkill(msg, approve)} />
+                    ))}
+                  </div>
+                ) : null}
                 {fileName || todos.length > 0 ? (
                   <div className="shrink-0 space-y-2 border-b border-border-subtle px-3 py-2">
                     {fileName ? (
@@ -776,6 +858,11 @@ export default function Ide() {
                             ) : m.streaming ? (
                               <WorkingLabel />
                             ) : null
+                          ) : m.role === "skill" ? (
+                            <SkillCard
+                              msg={m}
+                              onReview={(approve) => reviewPendingSkill(m, approve)}
+                            />
                           ) : m.role === "tool" ? (
                             <span className="inline-flex max-w-full items-center gap-1.5 font-mono text-[11px] text-info">
                               <Wrench className="size-3 shrink-0" />
@@ -857,6 +944,36 @@ export default function Ide() {
         ) : null}
       </div>
     </TooltipProvider>
+  );
+}
+
+function SkillCard({
+  msg,
+  onReview,
+}: {
+  msg: ChatMsg;
+  onReview: (approve: boolean) => void | Promise<void>;
+}) {
+  const pending = !msg.status || msg.status === "pending";
+  return (
+    <div className="rounded-lg border border-border-subtle bg-secondary/40 px-3 py-2">
+      <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Skill proposal</p>
+      <p className="mt-1 font-mono text-[12px] text-foreground">
+        {msg.name} v{msg.version} ({msg.status || "pending"})
+      </p>
+      {msg.rationale ? <p className="mt-1 text-[12px] text-muted-foreground">{msg.rationale}</p> : null}
+      {msg.body ? <ChatMarkdown text={msg.body} className="mt-2 space-y-2 text-[12px] leading-5" /> : null}
+      {pending ? (
+        <div className="mt-2 flex gap-1.5">
+          <Button size="sm" variant="ghost" className="h-7 px-2 text-[11px]" onClick={() => void onReview(false)}>
+            Reject skill
+          </Button>
+          <Button size="sm" className="h-7 bg-[#2ea043] px-3 text-[11px] text-white hover:bg-[#3fb950]" onClick={() => void onReview(true)}>
+            Accept skill
+          </Button>
+        </div>
+      ) : null}
+    </div>
   );
 }
 

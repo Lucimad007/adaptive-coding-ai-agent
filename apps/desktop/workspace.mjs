@@ -54,7 +54,11 @@ export function tree(dir = workspaceRoot(), rel = "", depth = 0) {
 }
 
 export function readFile(rel) {
-  return fs.readFileSync(resolveSafe(rel), "utf8");
+  const abs = resolveSafe(rel);
+  if (!fs.existsSync(abs) || !fs.statSync(abs).isFile()) {
+    throw new Error(`missing file: ${rel}`);
+  }
+  return fs.readFileSync(abs, "utf8");
 }
 
 export function writeFile(rel, content) {

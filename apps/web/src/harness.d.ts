@@ -12,6 +12,10 @@ export type AgentEvent = {
   walkIds?: string[];
   anchorId?: string;
   todos?: { id?: string; content?: string; status?: string }[];
+  version?: number;
+  body?: string;
+  rationale?: string;
+  status?: string;
 };
 
 export type HarnessApi = {
@@ -33,6 +37,9 @@ export type HarnessApi = {
   }>;
   diffs: () => Promise<{ diffs: { path: string; before: string; after: string }[] }>;
   rejectDiffs: (rel?: string) => Promise<{ ok: boolean; path?: string }>;
+  skillTrace?: (rel: string, task?: string) => Promise<{ ok?: boolean; skill?: AgentEvent }>;
+  skillReview?: (opts: { name: string; version: number; approve: boolean; reason?: string }) => Promise<{ ok?: boolean; status?: string }>;
+  skillsPending?: () => Promise<{ ok?: boolean; skills?: AgentEvent[] }>;
   pickWorkspace: () => Promise<{ root: string }>;
   startAgent: (prompt: string, opts?: { history?: { role: string; text: string }[]; mode?: string }) => Promise<{ ok: boolean }>;
   abortAgent: () => Promise<{ ok: boolean }>;
