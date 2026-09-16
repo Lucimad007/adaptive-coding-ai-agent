@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 
 function chrome() {
   return window.harness;
 }
 
-export default function TitleBar() {
+export default function TitleBar({ onOpenGraph }: { onOpenGraph?: () => void }) {
   const api = chrome();
   const [maximized, setMaximized] = useState(false);
 
@@ -51,9 +51,33 @@ export default function TitleBar() {
       <div className="flex min-w-0 flex-1 items-center gap-2 px-3">
         <img src="/patchline-icon.png" alt="" className="titlebar-no-drag size-4 rounded-full" draggable={false} />
         <span className="truncate text-[12px] font-semibold tracking-tight text-foreground">Patchline</span>
+        {onOpenGraph ? (
+          <button
+            type="button"
+            className="titlebar-no-drag ml-2 inline-flex h-6 items-center gap-1.5 rounded-md px-2 text-[11px] text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenGraph();
+            }}
+          >
+            <Share2Icon />
+            Graph
+          </button>
+        ) : null}
       </div>
       {!isMac ? controls : null}
     </header>
+  );
+}
+
+function Share2Icon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+      <circle cx="18" cy="5" r="3" />
+      <circle cx="6" cy="12" r="3" />
+      <circle cx="18" cy="19" r="3" />
+      <path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4" />
+    </svg>
   );
 }
 

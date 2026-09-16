@@ -94,6 +94,8 @@ export default function Ide() {
   const [diffs, setDiffs] = useState<{ path: string; before: string; after: string }[]>([]);
   const [diffIdx, setDiffIdx] = useState(0);
   const [mode, setMode] = useState<"edit" | "preview" | "diff">("preview");
+  const [rightTab, setRightTab] = useState("chat");
+  const [graphFull, setGraphFull] = useState(false);
   const chatEnd = useRef<HTMLDivElement>(null);
   const lang = monacoLanguage(mode === "diff" && diffs[diffIdx] ? diffs[diffIdx].path : path);
 
@@ -139,6 +141,28 @@ export default function Ide() {
       anchorId: data.anchorId,
     });
   }
+
+  async function showGraph() {
+    try {
+      await loadGraph("");
+    } catch {
+      /* graph worker may be unavailable */
+    }
+  }
+
+  function openGraphFull() {
+    setGraphFull(true);
+    void showGraph();
+  }
+
+  useEffect(() => {
+    if (!graphFull) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setGraphFull(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [graphFull]);
 
   function runAgent() {
     const text = prompt.trim();
@@ -212,8 +236,8 @@ export default function Ide() {
 
   return (
     <TooltipProvider delayDuration={250}>
-      <div className="surface-app flex h-screen min-h-0 min-w-0 flex-col overflow-hidden">
-        <TitleBar />
+      <div className="surface-app relative flex h-screen min-h-0 min-w-0 flex-col overflow-hidden">
+        <TitleBar onOpenGraph={openGraphFull} />
         <ResizablePanelGroup direction="horizontal" className="min-h-0 min-w-0 flex-1">
           <ResizablePanel defaultSize={18} minSize={10} maxSize={32} className="surface-sidebar min-w-0 overflow-hidden">
             <div className="flex h-8 items-center justify-between gap-2 px-3">
@@ -370,7 +394,14 @@ export default function Ide() {
           </ResizablePanel>
           <ResizableHandle className="w-px" />
           <ResizablePanel defaultSize={30} minSize={18} maxSize={48} className="surface-chat flex min-w-0 flex-col overflow-hidden">
-            <Tabs defaultValue="chat" className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
+            <Tabs
+              value={rightTab}
+              onValueChange={(v) => {
+                setRightTab(v);
+                if (v === "graph") void showGraph();
+              }}
+              className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden"
+            >
               <div className="flex h-9 items-center border-b border-border-subtle px-2">
                 <TabsList className="h-7 bg-transparent">
                   <TabsTrigger value="chat" className="text-[12px]">
@@ -453,12 +484,25 @@ export default function Ide() {
                   </div>
                 </div>
               </TabsContent>
-              <TabsContent value="graph" className="mt-0 min-h-0 min-w-0 flex-1 overflow-hidden">
+              <TabsContent value="graph" className="h-full">
                 <GraphPane payload={graph} />
               </TabsContent>
             </Tabs>
           </ResizablePanel>
         </ResizablePanelGroup>
+        {graphFull ? (
+          <div className="absolute inset-0 z-50 flex flex-col bg-background">
+            <div className="titlebar-no-drag flex h-9 shrink-0 items-center justify-between border-b border-border-subtle px-3">
+              <span className="text-[12px] font-semibold tracking-tight">Code graph</span>
+              <Button size="sm" variant="ghost" className="h-7 px-2 text-[12px]" onClick={() => setGraphFull(false)}>
+                Close
+              </Button>
+            </div>
+            <div className="flex min-h-0 flex-1 flex-col">
+              <GraphPane payload={graph} />
+            </div>
+          </div>
+        ) : null}
       </div>
     </TooltipProvider>
   );
