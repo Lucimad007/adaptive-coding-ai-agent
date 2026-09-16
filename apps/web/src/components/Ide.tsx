@@ -1165,6 +1165,7 @@ export default function Ide() {
                             ? "Ask about this workspace…"
                             : "Plan, search the graph, or edit files…"
                       }
+                      data-testid="composer"
                       className="min-h-[72px] w-full max-w-full resize-none border-0 bg-transparent px-3 pb-10 pr-3 pt-3 text-[13px] shadow-none focus-visible:ring-0"
                     />
                     <div className="absolute bottom-1.5 left-2 right-2 flex items-center gap-1">
@@ -1359,7 +1360,13 @@ function ToolBtn({
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={onClick}>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 text-muted-foreground hover:text-foreground"
+          onClick={onClick}
+          aria-label={label}
+        >
           {children}
         </Button>
       </TooltipTrigger>

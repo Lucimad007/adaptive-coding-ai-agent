@@ -55,6 +55,7 @@ export default function TitleBar({ onOpenGraph }: { onOpenGraph?: () => void }) 
           <button
             type="button"
             className="titlebar-no-drag ml-2 inline-flex h-6 items-center gap-1.5 rounded-md px-2 text-[11px] text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+            aria-label="Graph"
             onClick={(e) => {
               e.stopPropagation();
               onOpenGraph();
