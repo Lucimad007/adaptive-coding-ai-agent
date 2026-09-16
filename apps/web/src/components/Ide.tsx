@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import Editor, { DiffEditor, type BeforeMount } from "@monaco-editor/react";
 import { ArrowUp, BookOpen, Code2, FolderOpen, GitCompare, RotateCcw, Save, Square, X } from "lucide-react";
 import ChatMarkdown from "./ChatMarkdown";
@@ -14,6 +14,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { FileTypeIcon, monacoLanguage } from "@/lib/files";
+import { buildGitLabels, type GitStatus } from "@/lib/gitStatus";
 import { cn } from "@/lib/utils";
 
 type PlanStep = { id: string; text: string; status: string };
@@ -79,6 +80,7 @@ function isMarkdown(rel: string) {
 
 export default function Ide() {
   const [tree, setTree] = useState<FileEntry[]>([]);
+  const [gitFiles, setGitFiles] = useState<Record<string, GitStatus>>({});
   const [openTabs, setOpenTabs] = useState<string[]>(["README.md"]);
   const [path, setPath] = useState("README.md");
   const [content, setContent] = useState("");
@@ -99,9 +101,24 @@ export default function Ide() {
   const chatEnd = useRef<HTMLDivElement>(null);
   const lang = monacoLanguage(mode === "diff" && diffs[diffIdx] ? diffs[diffIdx].path : path);
 
+  async function refreshGitStatus() {
+    if (!api().gitStatus) return;
+    try {
+      const data = await api().gitStatus();
+      const next: Record<string, GitStatus> = {};
+      for (const [rel, status] of Object.entries(data.files || {})) {
+        next[rel] = status as GitStatus;
+      }
+      setGitFiles(next);
+    } catch {
+      setGitFiles({});
+    }
+  }
+
   async function loadTree() {
     const data = await api().tree();
     setTree((data.tree || []) as FileEntry[]);
+    await refreshGitStatus();
   }
 
   async function openFile(rel: string) {
@@ -123,6 +140,7 @@ export default function Ide() {
 
   async function save() {
     await api().write(path, content);
+    await refreshGitStatus();
   }
 
   async function loadDiffs() {
@@ -191,6 +209,7 @@ export default function Ide() {
       }
       if (ev.type === "done") {
         loadDiffs();
+        void refreshGitStatus();
         off();
       }
     });
@@ -200,6 +219,7 @@ export default function Ide() {
   async function reject() {
     await api().rejectDiffs();
     await loadDiffs();
+    await refreshGitStatus();
   }
 
   useEffect(() => {
@@ -233,6 +253,7 @@ export default function Ide() {
 
   const currentDiff = diffs[diffIdx];
   const fileName = path.split("/").pop() || path;
+  const gitLabels = useMemo(() => buildGitLabels(tree, gitFiles), [tree, gitFiles]);
 
   return (
     <TooltipProvider delayDuration={250}>
@@ -247,7 +268,7 @@ export default function Ide() {
               </ToolBtn>
             </div>
             <ScrollArea className="h-[calc(100%-2rem)]">
-              <FileTree entries={tree} onOpen={openFile} activePath={path} />
+              <FileTree entries={tree} onOpen={openFile} activePath={path} gitLabels={gitLabels} />
             </ScrollArea>
           </ResizablePanel>
           <ResizableHandle className="w-px" />

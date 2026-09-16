@@ -99,6 +99,41 @@ function gitShow(spec) {
   });
 }
 
+function gitStatusFiles() {
+  return new Promise((resolve) => {
+    const cwd = workspaceRoot();
+    const proc = spawn("git", ["status", "--porcelain", "-uall"], { cwd });
+    let out = "";
+    proc.stdout.on("data", (d) => (out += d.toString()));
+    proc.on("close", (code) => {
+      if (code !== 0) {
+        resolve({});
+        return;
+      }
+      const files = {};
+      for (const line of out.split(/\r?\n/)) {
+        if (line.length < 4) continue;
+        const xy = line.slice(0, 2);
+        let rel = line.slice(3).trim();
+        if (rel.includes(" -> ")) rel = rel.split(" -> ").pop().trim();
+        rel = rel.replace(/\\/g, "/");
+        const staged = xy[0];
+        const unstaged = xy[1];
+        if (staged === "!" || unstaged === "!") continue;
+        let status = "modified";
+        if (staged === "?" && unstaged === "?") status = "untracked";
+        else if (staged === "D" || unstaged === "D") status = "deleted";
+        else if (staged === "A" || unstaged === "A") status = "added";
+        else if (staged === "R" || unstaged === "R") status = "renamed";
+        else if (staged === "M" || unstaged === "M") status = "modified";
+        files[rel] = status;
+      }
+      resolve(files);
+    });
+    proc.on("error", () => resolve({}));
+  });
+}
+
 function createWindow() {
   win = new BrowserWindow({
     width: 1400,
@@ -128,6 +163,7 @@ function createWindow() {
 }
 
 ipcMain.handle("files:tree", () => ({ tree: tree() }));
+ipcMain.handle("git:status", async () => ({ files: await gitStatusFiles() }));
 ipcMain.handle("files:read", (_e, rel) => ({ path: rel, content: readFile(rel) }));
 ipcMain.handle("files:write", (_e, rel, content) => {
   writeFile(rel, content);

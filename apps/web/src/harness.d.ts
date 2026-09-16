@@ -18,6 +18,7 @@ export type HarnessApi = {
   isWindowMaximized?: () => Promise<boolean>;
   onWindowMaximized?: (cb: (maximized: boolean) => void) => () => void;
   tree: () => Promise<{ tree: unknown[] }>;
+  gitStatus: () => Promise<{ files: Record<string, string> }>;
   read: (rel: string) => Promise<{ path: string; content: string }>;
   write: (rel: string, content: string) => Promise<{ ok: boolean }>;
   graph: (query: string) => Promise<{

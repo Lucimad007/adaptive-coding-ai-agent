@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld("harness", {
     return () => ipcRenderer.removeListener("window:maximized", handler);
   },
   tree: () => ipcRenderer.invoke("files:tree"),
+  gitStatus: () => ipcRenderer.invoke("git:status"),
   read: (rel) => ipcRenderer.invoke("files:read", rel),
   write: (rel, content) => ipcRenderer.invoke("files:write", rel, content),
   graph: (query) =>
