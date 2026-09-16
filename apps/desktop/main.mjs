@@ -7,7 +7,9 @@ import { pythonBin } from "./python.mjs";
 import { closeShell, ptyAvailable, resizeShell, spawnShell, writeShell } from "./terminal.mjs";
 import {
   REPO_ROOT,
+  SKIP,
   readFile,
+  resolveSafe,
   setWorkspaceRoot,
   tree,
   workspaceRoot,
@@ -60,40 +62,85 @@ function runWorker(args) {
   });
 }
 
-function gitDiffs() {
-  return new Promise((resolve) => {
-    const cwd = workspaceRoot();
-    const proc = spawn("git", ["diff", "--name-only", "HEAD"], { cwd });
-    let names = "";
-    proc.stdout.on("data", (d) => (names += d.toString()));
-    proc.on("close", async () => {
-      const files = names.split(/\r?\n/).filter(Boolean).slice(0, 20);
-      const diffs = [];
-      for (const file of files) {
-        const rel = file.replace(/\\/g, "/");
-        let before = "";
-        try {
-          before = await gitShow(`HEAD:${rel}`);
-        } catch {
-          before = "";
-        }
-        let after = "";
-        try {
-          after = readFile(rel);
-        } catch {
-          after = "";
-        }
-        diffs.push({ path: rel, before, after });
-      }
-      resolve(diffs);
+function spawnGit(args) {
+  return new Promise((resolve, reject) => {
+    const proc = spawn("git", ["-c", "core.quotepath=false", ...args], {
+      cwd: workspaceRoot(),
+      windowsHide: true,
     });
+    let out = "";
+    proc.stdout.setEncoding("utf8");
+    proc.stdout.on("data", (d) => (out += d.toString()));
+    proc.on("close", (code) => (code === 0 ? resolve(out) : reject(new Error(`git ${args[0]} ${code}`))));
+    proc.on("error", reject);
   });
+}
+
+function cleanGitPath(raw) {
+  let rel = raw.trim().replace(/\\/g, "/");
+  if (rel.startsWith('"') && rel.endsWith('"')) rel = rel.slice(1, -1);
+  if (rel.includes(" -> ")) rel = rel.split(" -> ").pop().trim();
+  return rel;
+}
+
+function skipDiffPath(rel) {
+  const parts = rel.split("/");
+  if (parts.some((p) => SKIP.has(p))) return true;
+  if (rel.startsWith("data/eval/")) return true;
+  if (rel.startsWith("apps/web/dist/")) return true;
+  return false;
+}
+
+async function gitChangedPaths() {
+  const files = await gitStatusFiles();
+  return Object.keys(files)
+    .filter((rel) => !skipDiffPath(rel))
+    .slice(0, 40);
+}
+
+async function gitDiffs() {
+  const files = await gitChangedPaths();
+  const diffs = [];
+  for (const rel of files) {
+    let before = "";
+    try {
+      before = await gitShow(`HEAD:${rel}`);
+    } catch {
+      before = "";
+    }
+    let after = "";
+    try {
+      after = readFile(rel);
+    } catch {
+      after = "";
+    }
+    if (before.length > 400_000 || after.length > 400_000) continue;
+    diffs.push({ path: rel, before, after });
+  }
+  return diffs;
+}
+
+async function revertWorkspaceFile(rel) {
+  const abs = resolveSafe(rel);
+  let tracked = false;
+  try {
+    await spawnGit(["cat-file", "-e", `HEAD:${rel.replace(/\\/g, "/")}`]);
+    tracked = true;
+  } catch {
+    tracked = false;
+  }
+  if (tracked) {
+    await spawnGit(["checkout", "HEAD", "--", rel.replace(/\\/g, "/")]);
+    return;
+  }
+  if (fs.existsSync(abs) && fs.statSync(abs).isFile()) fs.unlinkSync(abs);
 }
 
 function gitShow(spec) {
   return new Promise((resolve, reject) => {
-    const proc = spawn("git", ["show", spec], { cwd: workspaceRoot() });
+    const proc = spawn("git", ["show", spec], { cwd: workspaceRoot(), windowsHide: true });
     let out = "";
+    proc.stdout.setEncoding("utf8");
     proc.stdout.on("data", (d) => (out += d.toString()));
     proc.on("close", (code) => (code === 0 ? resolve(out) : reject(new Error("git show"))));
   });
@@ -114,9 +161,7 @@ function gitStatusFiles() {
       for (const line of out.split(/\r?\n/)) {
         if (line.length < 4) continue;
         const xy = line.slice(0, 2);
-        let rel = line.slice(3).trim();
-        if (rel.includes(" -> ")) rel = rel.split(" -> ").pop().trim();
-        rel = rel.replace(/\\/g, "/");
+        let rel = cleanGitPath(line.slice(3));
         const staged = xy[0];
         const unstaged = xy[1];
         if (staged === "!" || unstaged === "!") continue;
@@ -181,11 +226,20 @@ ipcMain.handle("graph:retrieve", async (_e, query) => {
   return JSON.parse(raw);
 });
 ipcMain.handle("diffs:list", async () => ({ diffs: await gitDiffs() }));
-ipcMain.handle("diffs:reject", () => {
-  return new Promise((resolve) => {
-    const proc = spawn("git", ["checkout", "--", "."], { cwd: workspaceRoot() });
-    proc.on("close", () => resolve({ ok: true }));
-  });
+ipcMain.handle("diffs:reject", async (_e, rel) => {
+  if (rel) {
+    await revertWorkspaceFile(rel);
+    return { ok: true, path: rel };
+  }
+  const files = await gitChangedPaths();
+  for (const file of files) {
+    try {
+      await revertWorkspaceFile(file);
+    } catch {
+      /* skip */
+    }
+  }
+  return { ok: true };
 });
 ipcMain.handle("workspace:pick", async () => {
   const result = await dialog.showOpenDialog(win, { properties: ["openDirectory"] });
@@ -201,7 +255,7 @@ ipcMain.handle("agent:start", (_e, prompt, opts = {}) => {
   }
   const proc = spawn(pythonBin(), ["-m", "adaptive_agent.harness_worker", "run"], {
     cwd: REPO_ROOT,
-    env: { ...process.env, PYTHONPATH: REPO_ROOT, PYTHONUNBUFFERED: "1" },
+    env: { ...process.env, PYTHONPATH: REPO_ROOT, PYTHONUNBUFFERED: "1", PYTHONIOENCODING: "utf-8" },
   });
   agentProc = proc;
   let stdoutBuf = "";
@@ -241,7 +295,16 @@ ipcMain.handle("agent:start", (_e, prompt, opts = {}) => {
     type: "start_run",
     workspace: workspaceRoot(),
     prompt,
-    history: Array.isArray(opts.history) ? opts.history : [],
+    history: Array.isArray(opts.history)
+      ? opts.history.map((h) => ({
+          role: h.role,
+          text: String(h.text || "").replace(
+            /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g,
+            "\uFFFD",
+          ),
+        }))
+      : [],
+    mode: opts.mode || "agent",
   });
   win?.webContents.send("agent:event", { type: "status", text: "running" });
   proc.stdin.write(payload + "\n", "utf8", () => {

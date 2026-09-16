@@ -20,7 +20,7 @@ contextBridge.exposeInMainWorld("harness", {
       ? ipcRenderer.invoke("graph:retrieve", query)
       : ipcRenderer.invoke("graph:get"),
   diffs: () => ipcRenderer.invoke("diffs:list"),
-  rejectDiffs: () => ipcRenderer.invoke("diffs:reject"),
+  rejectDiffs: (rel) => ipcRenderer.invoke("diffs:reject", rel),
   pickWorkspace: () => ipcRenderer.invoke("workspace:pick"),
   startAgent: (prompt, opts) => ipcRenderer.invoke("agent:start", prompt, opts || {}),
   abortAgent: () => ipcRenderer.invoke("agent:abort"),

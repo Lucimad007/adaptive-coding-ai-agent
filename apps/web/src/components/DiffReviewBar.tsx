@@ -1,6 +1,5 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 
 export default function DiffReviewBar({
   path,
@@ -21,13 +20,7 @@ export default function DiffReviewBar({
 }) {
   const file = path.split("/").pop() || path;
   return (
-    <div className="pointer-events-none absolute inset-x-0 bottom-4 z-20 flex justify-center px-4">
-      <div
-        className={cn(
-          "pointer-events-auto flex max-w-full flex-wrap items-center gap-2 rounded-xl border border-border-subtle",
-          "bg-[color-mix(in_srgb,var(--background)_92%,transparent)] px-2 py-1.5 shadow-[var(--elev-raised)] backdrop-blur-md",
-        )}
-      >
+    <div className="flex shrink-0 flex-wrap items-center justify-center gap-2 border-b border-border-subtle bg-[var(--editor)] px-2 py-1.5">
         <div className="flex items-center gap-0.5">
           <Button
             type="button"
@@ -77,13 +70,12 @@ export default function DiffReviewBar({
             className="h-7 bg-[#2ea043] px-3 text-[11px] text-white hover:bg-[#3fb950]"
             onClick={onKeep}
           >
-            Keep
+            Accept
             <kbd className="ml-1.5 hidden rounded border border-white/20 px-1 font-sans text-[10px] opacity-90 lg:inline">
               Ctrl+Shift+Y
             </kbd>
           </Button>
         </div>
-      </div>
     </div>
   );
 }

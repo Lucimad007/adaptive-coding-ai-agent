@@ -12,15 +12,16 @@ import {
   RotateCcw,
   Save,
   Square,
+  Wrench,
   X,
 } from "lucide-react";
 import type { ImperativePanelHandle } from "react-resizable-panels";
 import ChatMarkdown from "./ChatMarkdown";
+import DiffReviewBar from "./DiffReviewBar";
 import FileTree, { type FileEntry } from "./FileTree";
 import GraphPane from "./GraphPane";
 import TerminalPane from "./TerminalPane";
 import TitleBar from "./TitleBar";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -30,23 +31,27 @@ import { FileTypeIcon, monacoLanguage } from "@/lib/files";
 import { buildGitLabels, type GitStatus } from "@/lib/gitStatus";
 import { configureMonacoTs, ensureModel, warmMonacoImports } from "@/lib/monacoWorkspace";
 import { cn } from "@/lib/utils";
+import { AnimatedShinyText } from "@/components/ui/animated-shiny-text";
 
 type PlanStep = { id: string; text: string; status: string };
-type ChatMsg = { id: string; role: "user" | "assistant" | "tool" | "error"; text: string; streaming?: boolean };
-type ChatSession = { id: string; title: string; log: ChatMsg[]; plan: PlanStep[] };
+type ChatMsg = {
+  id: string;
+  role: "user" | "assistant" | "tool" | "error";
+  text: string;
+  streaming?: boolean;
+  name?: string;
+  args?: Record<string, unknown>;
+};
+type AgentMode = "agent" | "plan" | "chat";
+type TodoItem = { id: string; content: string; status: "pending" | "in_progress" | "completed" };
+type ChatSession = { id: string; title: string; log: ChatMsg[]; plan: PlanStep[]; todos: TodoItem[] };
 
 function newSession(partial?: Partial<ChatSession>): ChatSession {
-  return { id: crypto.randomUUID(), title: "New chat", log: [], plan: [], ...partial };
+  return { id: crypto.randomUUID(), title: "New chat", log: [], plan: [], todos: [], ...partial };
 }
 
 function api() {
   return window.harness;
-}
-
-function planVariant(status: string) {
-  if (status === "done") return "done" as const;
-  if (status === "active") return "active" as const;
-  return "pending" as const;
 }
 
 const monacoBeforeMount: BeforeMount = (monaco) => {
@@ -73,6 +78,14 @@ const monacoBeforeMount: BeforeMount = (monaco) => {
       "scrollbarSlider.activeBackground": "#c8c8c8aa",
       "editorWidget.background": "#222222",
       "editorWidget.border": "#2a2a2a",
+      "diffEditor.insertedTextBackground": "#28c84026",
+      "diffEditor.removedTextBackground": "#ff5f5726",
+      "diffEditor.insertedLineBackground": "#28c84014",
+      "diffEditor.removedLineBackground": "#ff5f5714",
+      "diffEditor.insertedTextBorder": "#00000000",
+      "diffEditor.removedTextBorder": "#00000000",
+      "diffEditorGutter.insertedLineBackground": "#28c84010",
+      "diffEditorGutter.removedLineBackground": "#ff5f5710",
     },
   });
 };
@@ -94,6 +107,10 @@ const editorOptions = {
     horizontalSliderSize: 6,
   },
 };
+
+function utf8Safe(s: string) {
+  return s.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, "\uFFFD");
+}
 
 function isMarkdown(rel: string) {
   return /\.md$/i.test(rel) || /^readme(\.|$)/i.test(rel.split(/[/\\]/).pop() || "");
@@ -125,10 +142,15 @@ export default function Ide() {
   const chatPanelRef = useRef<ImperativePanelHandle>(null);
   const activeChatIdRef = useRef(activeChatId);
   activeChatIdRef.current = activeChatId;
+  const [agentMode, setAgentMode] = useState<AgentMode>("agent");
+  const [agentMenu, setAgentMenu] = useState(false);
+  const [agentBusy, setAgentBusy] = useState(false);
+  const agentModeRef = useRef(agentMode);
+  agentModeRef.current = agentMode;
   const streamMsgIdRef = useRef<string | null>(null);
   const session = sessions.find((s) => s.id === activeChatId) ?? sessions[0];
   const log = session?.log ?? [];
-  const plan = session?.plan ?? [];
+  const todos = session?.todos ?? [];
   const [graph, setGraph] = useState<{
     nodes: unknown[];
     edges?: unknown[];
@@ -160,6 +182,7 @@ export default function Ide() {
     const data = await api().tree();
     setTree((data.tree || []) as FileEntry[]);
     await refreshGitStatus();
+    await loadDiffs(false);
   }
 
   async function openFile(rel: string) {
@@ -169,6 +192,11 @@ export default function Ide() {
     setMode(isMarkdown(rel) ? "preview" : "edit");
     setOpenTabs((tabs) => (tabs.includes(rel) ? tabs : [...tabs, rel]));
     await syncMonacoTypecheck(rel, data.content ?? "");
+    const idx = diffs.findIndex((d) => d.path === rel);
+    if (idx >= 0) {
+      setDiffIdx(idx);
+      setMode("diff");
+    }
   }
 
   function closeTab(rel: string, e: MouseEvent) {
@@ -185,11 +213,59 @@ export default function Ide() {
     await refreshGitStatus();
   }
 
-  async function loadDiffs() {
-    const data = await api().diffs();
-    setDiffs(data.diffs || []);
-    setDiffIdx(0);
-    if (data.diffs?.length) setMode("diff");
+  async function loadDiffs(enterReview = true) {
+    try {
+      const data = await api().diffs();
+      const list = data.diffs || [];
+      setDiffs(list);
+      if (enterReview && list.length) {
+        const found = list.findIndex((d) => d.path === path);
+        setDiffIdx(found >= 0 ? found : 0);
+        setMode("diff");
+      } else if (!list.length && mode === "diff") {
+        leaveReview();
+      }
+    } catch {
+      setDiffs([]);
+    }
+  }
+
+  function leaveReview() {
+    setMode(isMarkdown(path) ? "preview" : "edit");
+  }
+
+  function dropDiff(i: number) {
+    const next = diffs.filter((_, idx) => idx !== i);
+    setDiffs(next);
+    if (!next.length) leaveReview();
+    else setDiffIdx(Math.min(i, next.length - 1));
+  }
+
+  function acceptDiff() {
+    dropDiff(diffIdx);
+  }
+
+  async function undoDiff() {
+    const d = diffs[diffIdx];
+    if (!d) return;
+    await api().rejectDiffs(d.path);
+    if (path === d.path) {
+      try {
+        const data = await api().read(d.path);
+        setContent(data.content ?? "");
+      } catch {
+        setContent("");
+      }
+    }
+    dropDiff(diffIdx);
+    await loadTree();
+  }
+
+  async function reject() {
+    await api().rejectDiffs();
+    setDiffs([]);
+    leaveReview();
+    await loadTree();
   }
 
   async function loadGraph(q: string) {
@@ -214,6 +290,21 @@ export default function Ide() {
     setGraphFull(true);
     void showGraph();
   }
+
+  useEffect(() => {
+    if (mode !== "diff") return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.shiftKey && (e.key === "Y" || e.key === "y")) {
+        e.preventDefault();
+        acceptDiff();
+      } else if (e.ctrlKey && !e.shiftKey && (e.key === "n" || e.key === "N")) {
+        e.preventDefault();
+        void undoDiff();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [mode, diffIdx, diffs]);
 
   useEffect(() => {
     if (!graphFull) return;
@@ -264,27 +355,25 @@ export default function Ide() {
     const text = prompt.trim();
     if (!text) return;
     const chatId = activeChatIdRef.current;
-    const assistantId = crypto.randomUUID();
-    streamMsgIdRef.current = assistantId;
+    streamMsgIdRef.current = null;
+    setAgentBusy(true);
     const prior = sessions.find((s) => s.id === chatId)?.log ?? [];
     const history = [...prior, { role: "user" as const, text }]
       .filter((m) => (m.role === "user" || m.role === "assistant") && m.text.trim())
       .slice(-20)
-      .map((m) => ({ role: m.role, text: m.text }));
+      .map((m) => ({ role: m.role, text: utf8Safe(m.text) }));
     patchSession(chatId, (s) => ({
       ...s,
       title: s.title === "New chat" || s.title === "Chat" ? text.slice(0, 36) : s.title,
-      log: [
-        ...s.log.map((m) => (m.streaming ? { ...m, streaming: false } : m)),
-        { id: crypto.randomUUID(), role: "user", text },
-        { id: assistantId, role: "assistant", text: "", streaming: true },
-      ],
+      log: [...s.log.map((m) => (m.streaming ? { ...m, streaming: false } : m)), { id: crypto.randomUUID(), role: "user", text }],
+      todos: [],
     }));
     setPrompt("");
     loadGraph(text).catch(() => undefined);
     void api()
-      .startAgent(text, { history })
+      .startAgent(text, { history, mode: agentModeRef.current })
       .catch((err) => {
+        setAgentBusy(false);
         patchSession(chatId, (s) => ({
           ...s,
           log: [
@@ -293,12 +382,6 @@ export default function Ide() {
           ],
         }));
       });
-  }
-
-  async function reject() {
-    await api().rejectDiffs();
-    await loadDiffs();
-    await refreshGitStatus();
   }
 
   useEffect(() => {
@@ -317,36 +400,64 @@ export default function Ide() {
     })();
     const off = api().onAgentEvent((ev) => {
       const chatId = activeChatIdRef.current;
-      const streamId = streamMsgIdRef.current;
       if (ev.type === "token") {
-        const piece = String(ev.text || "");
-        if (!piece || !streamId) return;
-        patchSession(chatId, (s) => ({
-          ...s,
-          log: s.log.map((m) => (m.id === streamId ? { ...m, text: m.text + piece } : m)),
-        }));
+        const piece = utf8Safe(String(ev.text || ""));
+        if (!piece) return;
+        patchSession(chatId, (s) => {
+          const log = [...s.log];
+          const last = log[log.length - 1];
+          if (last?.role === "assistant" && last.streaming) {
+            log[log.length - 1] = { ...last, text: last.text + piece };
+          } else {
+            const id = crypto.randomUUID();
+            streamMsgIdRef.current = id;
+            log.push({ id, role: "assistant", text: piece, streaming: true });
+          }
+          return { ...s, log };
+        });
       }
       if (ev.type === "tool") {
-        patchSession(chatId, (s) => ({
-          ...s,
-          log: [...s.log, { id: crypto.randomUUID(), role: "tool", text: `tool ${ev.name}` }],
-        }));
+        patchSession(chatId, (s) => {
+          const log = [...s.log];
+          const last = log[log.length - 1];
+          if (last?.role === "assistant" && last.streaming) {
+            log[log.length - 1] = { ...last, streaming: false };
+            streamMsgIdRef.current = null;
+          }
+          if (ev.name === "update_todos") return { ...s, log };
+          const args = (ev as { args?: Record<string, unknown> }).args;
+          log.push({
+            id: crypto.randomUUID(),
+            role: "tool",
+            name: ev.name,
+            args,
+            text: ev.name || "tool",
+          });
+          return { ...s, log };
+        });
       }
       if (ev.type === "error") {
+        setAgentBusy(false);
         patchSession(chatId, (s) => ({
           ...s,
           log: [...s.log, { id: crypto.randomUUID(), role: "error", text: String(ev.message) }],
         }));
       }
-      if (ev.type === "status" && streamId) {
+      if (ev.type === "todos") {
+        const rows = Array.isArray(ev.todos) ? ev.todos : [];
         patchSession(chatId, (s) => ({
           ...s,
-          log: s.log.map((m) =>
-            m.id === streamId && !m.text ? { ...m, text: "", streaming: true } : m,
-          ),
+          todos: rows.map((row, i) => {
+            const status =
+              row.status === "completed" || row.status === "in_progress" ? row.status : "pending";
+            return {
+              id: String(row.id || i + 1),
+              content: String(row.content || ""),
+              status,
+            };
+          }),
         }));
       }
-      if (ev.type === "plan") patchSession(chatId, (s) => ({ ...s, plan: (ev.steps as PlanStep[]) || [] }));
       if (ev.type === "graph") {
         setGraph({
           nodes: (ev.nodes as unknown[]) || [],
@@ -357,11 +468,13 @@ export default function Ide() {
       }
       if (ev.type === "fs") void loadTree();
       if (ev.type === "done") {
+        setAgentBusy(false);
+        streamMsgIdRef.current = null;
         patchSession(chatId, (s) => ({
           ...s,
-          log: s.log.map((m) => (m.id === streamId || m.streaming ? { ...m, streaming: false } : m)),
+          log: s.log.map((m) => (m.streaming ? { ...m, streaming: false } : m)),
         }));
-        loadDiffs();
+        loadDiffs(true);
         void loadTree();
       }
     });
@@ -429,8 +542,15 @@ export default function Ide() {
                     <ToolBtn label="Save" onClick={save}>
                       <Save className="size-3.5" />
                     </ToolBtn>
-                    <ToolBtn label="Review diffs" onClick={loadDiffs}>
-                      <GitCompare className="size-3.5" />
+                    <ToolBtn label="Review diffs" onClick={() => void loadDiffs(true)}>
+                      <span className="relative">
+                        <GitCompare className="size-3.5" />
+                        {diffs.length ? (
+                          <span className="absolute -right-1.5 -top-1 min-w-3 rounded-full bg-[#2ea043] px-0.5 text-center text-[8px] font-semibold leading-3 text-white">
+                            {diffs.length}
+                          </span>
+                        ) : null}
+                      </span>
                     </ToolBtn>
                     <ToolBtn label="Reject writes" onClick={reject}>
                       <RotateCcw className="size-3.5" />
@@ -501,6 +621,15 @@ export default function Ide() {
                     />
                   ) : currentDiff ? (
                     <div className="flex h-full flex-col">
+                      <DiffReviewBar
+                        path={currentDiff.path}
+                        index={diffIdx}
+                        total={diffs.length}
+                        onPrev={() => setDiffIdx((i) => Math.max(0, i - 1))}
+                        onNext={() => setDiffIdx((i) => Math.min(diffs.length - 1, i + 1))}
+                        onUndo={() => void undoDiff()}
+                        onKeep={acceptDiff}
+                      />
                       <div className="flex gap-1 overflow-x-auto border-b border-border-subtle px-2 py-1">
                         {diffs.map((d, i) => (
                           <Button
@@ -522,7 +651,13 @@ export default function Ide() {
                           original={currentDiff.before}
                           modified={currentDiff.after}
                           beforeMount={monacoBeforeMount}
-                          options={{ ...editorOptions, renderSideBySide: true, fontSize: 12 }}
+                          options={{
+                            ...editorOptions,
+                            renderSideBySide: true,
+                            renderIndicators: false,
+                            renderMarginRevertIcon: false,
+                            fontSize: 12,
+                          }}
                         />
                       </div>
                     </div>
@@ -535,7 +670,14 @@ export default function Ide() {
               </ResizablePanel>
               <ResizableHandle className="h-px" />
               <ResizablePanel defaultSize={22} minSize={10} className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-[var(--code)]">
-                <div className="shrink-0 border-b border-border-subtle px-3 py-1 text-[11px] font-medium text-muted-foreground">Terminal</div>
+                <div className="flex h-8 shrink-0 items-center gap-2 border-b border-border-subtle px-3">
+                  <span className="flex items-center gap-1.5" aria-hidden>
+                    <span className="size-2.5 rounded-full bg-[#ff5f57]" />
+                    <span className="size-2.5 rounded-full bg-[#febc2e]" />
+                    <span className="size-2.5 rounded-full bg-[#28c840]" />
+                  </span>
+                  <span className="text-[11px] font-medium text-muted-foreground">Terminal</span>
+                </div>
                 <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
                   <TerminalPane />
                 </div>
@@ -599,23 +741,18 @@ export default function Ide() {
                 </div>
               </div>
               <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-                <ScrollArea className="min-h-0 min-w-0 flex-1">
-                  <div className="min-w-0 max-w-full space-y-3 overflow-hidden px-3 py-3">
+                {fileName || todos.length > 0 ? (
+                  <div className="shrink-0 space-y-2 border-b border-border-subtle px-3 py-2">
                     {fileName ? (
                       <p className="text-[11px] text-muted-foreground">
                         Context · <span className="font-mono text-info">{fileName}</span>
                       </p>
                     ) : null}
-                    {plan.length > 0 ? (
-                      <ul className="surface-inset space-y-1.5 rounded-md border border-border-subtle p-2">
-                        {plan.map((s) => (
-                          <li key={s.id} className="flex items-start gap-2 text-xs">
-                            <Badge variant={planVariant(s.status)}>{s.status}</Badge>
-                            <span className="leading-5 text-foreground">{s.text}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    ) : null}
+                    {todos.length > 0 ? <TodoList items={todos} /> : null}
+                  </div>
+                ) : null}
+                <ScrollArea className="min-h-0 min-w-0 flex-1">
+                  <div className="min-w-0 max-w-full space-y-3 overflow-hidden px-3 py-3">
                     {log.length === 0 ? (
                       <p className="text-sm leading-6 text-muted-foreground">
                         Ask the coding agent about this workspace. Open Graph from the title bar for the code graph.
@@ -637,14 +774,25 @@ export default function Ide() {
                             m.text ? (
                               <ChatMarkdown text={m.text} />
                             ) : m.streaming ? (
-                              <span className="text-muted-foreground">Working…</span>
+                              <WorkingLabel />
                             ) : null
+                          ) : m.role === "tool" ? (
+                            <span className="inline-flex max-w-full items-center gap-1.5 font-mono text-[11px] text-info">
+                              <Wrench className="size-3 shrink-0" />
+                              <span className="truncate">{m.name || m.text}</span>
+                              {m.args?.path ? <span className="truncate text-muted-foreground">{String(m.args.path)}</span> : null}
+                            </span>
                           ) : (
                             m.text
                           )}
                         </div>
                       ))
                     )}
+                    {agentBusy ? (
+                      <p className="px-1">
+                        <WorkingLabel />
+                      </p>
+                    ) : null}
                     <div ref={chatEnd} />
                   </div>
                 </ScrollArea>
@@ -659,26 +807,33 @@ export default function Ide() {
                           runAgent();
                         }
                       }}
-                      placeholder="Plan, search the graph, or edit files…"
-                      className="min-h-[72px] w-full max-w-full resize-none border-0 bg-transparent px-9 pr-16 text-[13px] shadow-none focus-visible:ring-0"
+                      placeholder={
+                        agentMode === "plan"
+                          ? "Describe the change — I’ll outline steps, no edits…"
+                          : agentMode === "chat"
+                            ? "Ask about this workspace…"
+                            : "Plan, search the graph, or edit files…"
+                      }
+                      className="min-h-[72px] w-full max-w-full resize-none border-0 bg-transparent px-3 pb-10 pr-3 pt-3 text-[13px] shadow-none focus-visible:ring-0"
                     />
-                    <div className="absolute bottom-2 left-2">
-                      <ToolBtn label="New chat" onClick={startNewChat}>
-                        <Plus className="size-3.5" />
-                      </ToolBtn>
-                    </div>
-                    <div className="absolute bottom-2 right-2 flex gap-1">
-                      <Button
-                        size="icon"
-                        className="h-7 w-7 rounded-lg"
-                        onClick={runAgent}
-                        disabled={!prompt.trim()}
-                      >
-                        <ArrowUp className="size-3.5" />
-                      </Button>
-                      <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => api().abortAgent()}>
-                        <Square className="size-3" />
-                      </Button>
+                    <div className="absolute bottom-1.5 left-2 right-2 flex items-center gap-1">
+                      <ModeMenu value={agentMode} open={agentMenu} onOpenChange={setAgentMenu} onChange={setAgentMode} />
+                      <div className="ml-auto flex gap-1">
+                        <ToolBtn label="New chat" onClick={startNewChat}>
+                          <Plus className="size-3.5" />
+                        </ToolBtn>
+                        <Button
+                          size="icon"
+                          className="h-7 w-7 rounded-lg"
+                          onClick={runAgent}
+                          disabled={!prompt.trim()}
+                        >
+                          <ArrowUp className="size-3.5" />
+                        </Button>
+                        <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => api().abortAgent()}>
+                          <Square className="size-3" />
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -702,6 +857,100 @@ export default function Ide() {
         ) : null}
       </div>
     </TooltipProvider>
+  );
+}
+
+function WorkingLabel({ text = "Working…" }: { text?: string }) {
+  return (
+    <AnimatedShinyText className="mx-0 inline max-w-none text-[12px] text-muted-foreground [animation-duration:2.2s]">
+      {text}
+    </AnimatedShinyText>
+  );
+}
+
+function TodoList({ items }: { items: TodoItem[] }) {
+  const done = items.filter((t) => t.status === "completed").length;
+  return (
+    <div className="rounded-md border border-border-subtle px-2 py-1.5">
+      <div className="mb-1 flex items-center justify-between text-[11px] text-muted-foreground">
+        <span className="font-medium text-foreground">To-dos</span>
+        <span>
+          {done}/{items.length}
+        </span>
+      </div>
+      <ul className="space-y-1">
+        {items.map((t) => (
+          <li key={t.id} className="flex items-start gap-2 text-[12px] leading-5">
+            <span
+              className={cn(
+                "mt-0.5 flex size-3.5 shrink-0 items-center justify-center rounded-full border",
+                t.status === "completed" && "border-success bg-success text-[9px] text-success-foreground",
+                t.status === "in_progress" && "border-info bg-info/20",
+                t.status === "pending" && "border-muted-foreground/40",
+              )}
+              aria-hidden
+            >
+              {t.status === "completed" ? "✓" : t.status === "in_progress" ? "•" : ""}
+            </span>
+            <span className={cn(t.status === "completed" && "text-muted-foreground line-through")}>
+              {t.status === "in_progress" ? <WorkingLabel text={t.content} /> : t.content}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function ModeMenu({
+  value,
+  open,
+  onOpenChange,
+  onChange,
+}: {
+  value: AgentMode;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onChange: (mode: AgentMode) => void;
+}) {
+  const items: { id: AgentMode; label: string; hint: string }[] = [
+    { id: "agent", label: "Agent", hint: "Edit files with tools" },
+    { id: "plan", label: "Plan", hint: "Read-only, numbered steps" },
+    { id: "chat", label: "Chat", hint: "Ask questions, no writes" },
+  ];
+  const current = items.find((i) => i.id === value) || items[0];
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-[12px] text-muted-foreground hover:bg-accent hover:text-foreground"
+        onClick={() => onOpenChange(!open)}
+      >
+        {current.label}
+        <span className="text-[10px]">▾</span>
+      </button>
+      {open ? (
+        <div className="absolute bottom-8 left-0 z-20 w-56 overflow-hidden rounded-lg border border-border-subtle bg-popover p-1 shadow-[var(--elev-raised)]">
+          {items.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              className={cn(
+                "flex w-full flex-col items-start rounded-md px-2 py-1.5 text-left",
+                item.id === value ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground",
+              )}
+              onClick={() => {
+                onChange(item.id);
+                onOpenChange(false);
+              }}
+            >
+              <span className="text-[12px] font-medium">{item.label}</span>
+              <span className="text-[11px] opacity-70">{item.hint}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
   );
 }
 

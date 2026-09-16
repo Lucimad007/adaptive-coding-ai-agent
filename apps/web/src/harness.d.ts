@@ -5,11 +5,13 @@ export type AgentEvent = {
   message?: string;
   path?: string;
   op?: string;
+  args?: Record<string, unknown>;
   steps?: unknown[];
   nodes?: unknown[];
   edges?: unknown[];
   walkIds?: string[];
   anchorId?: string;
+  todos?: { id?: string; content?: string; status?: string }[];
 };
 
 export type HarnessApi = {
@@ -30,9 +32,9 @@ export type HarnessApi = {
     anchorId?: string;
   }>;
   diffs: () => Promise<{ diffs: { path: string; before: string; after: string }[] }>;
-  rejectDiffs: () => Promise<{ ok: boolean }>;
+  rejectDiffs: (rel?: string) => Promise<{ ok: boolean; path?: string }>;
   pickWorkspace: () => Promise<{ root: string }>;
-  startAgent: (prompt: string, opts?: { history?: { role: string; text: string }[] }) => Promise<{ ok: boolean }>;
+  startAgent: (prompt: string, opts?: { history?: { role: string; text: string }[]; mode?: string }) => Promise<{ ok: boolean }>;
   abortAgent: () => Promise<{ ok: boolean }>;
   onAgentEvent: (cb: (ev: AgentEvent) => void) => () => void;
   termOpen: (size?: { cols: number; rows: number }) => Promise<{ ok: boolean }>;

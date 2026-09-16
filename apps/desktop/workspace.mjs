@@ -29,7 +29,7 @@ export function resolveSafe(rel, root = workspaceRoot()) {
   return abs;
 }
 
-const SKIP = new Set([".git", ".venv", "node_modules", ".next", "dist", "__pycache__", "release"]);
+export const SKIP = new Set([".git", ".venv", "node_modules", ".next", "dist", "__pycache__", "release", ".pytest_cache"]);
 
 export function tree(dir = workspaceRoot(), rel = "", depth = 0) {
   if (depth > 6) return [];

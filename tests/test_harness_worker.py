@@ -5,7 +5,7 @@ import sys
 
 import pytest
 
-from adaptive_agent.harness_worker import _chunk_text, _safe, make_tools
+from adaptive_agent.harness_worker import _chunk_text, _safe, _sanitize_str, make_tools
 
 
 def test_chunk_text_plain_and_blocks():
@@ -15,6 +15,10 @@ def test_chunk_text_plain_and_blocks():
 
     assert _chunk_text(Msg("hi")) == "hi"
     assert _chunk_text(Msg([{"type": "text", "text": "a"}, {"type": "text", "text": "b"}])) == "ab"
+
+
+def test_sanitize_str_drops_lone_surrogates():
+    assert "\ufffd" in _sanitize_str("ok\udc9dbad")
 
 
 def test_worker_rejects_traversal(tmp_path: Path):
