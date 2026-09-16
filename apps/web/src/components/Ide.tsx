@@ -3,9 +3,13 @@ import Editor, { DiffEditor, type BeforeMount, type Monaco } from "@monaco-edito
 import {
   ArrowUp,
   BookOpen,
+  ChevronDown,
+  ClipboardList,
   Code2,
   FolderOpen,
   GitCompare,
+  Infinity,
+  MessageSquare,
   PanelRightClose,
   PanelRightOpen,
   Plus,
@@ -34,6 +38,7 @@ import { cn } from "@/lib/utils";
 import { AnimatedShinyText } from "@/components/ui/animated-shiny-text";
 
 type PlanStep = { id: string; text: string; status: string };
+type ChatImage = { id: string; mime: string; dataUrl: string };
 type ChatMsg = {
   id: string;
   role: "user" | "assistant" | "tool" | "error" | "skill";
@@ -45,10 +50,13 @@ type ChatMsg = {
   body?: string;
   rationale?: string;
   status?: string;
+  images?: ChatImage[];
 };
 type AgentMode = "agent" | "plan" | "chat";
 type TodoItem = { id: string; content: string; status: "pending" | "in_progress" | "completed" };
-type ChatSession = { id: string; title: string; log: ChatMsg[]; plan: PlanStep[]; todos: TodoItem[] };
+type PlanQuestion = { id: string; prompt: string; options: string[] };
+type PlanDoc = { title: string; markdown: string };
+type ChatSession = { id: string; title: string; log: ChatMsg[]; plan: PlanStep[]; todos: TodoItem[]; planDoc?: PlanDoc | null };
 
 function newSession(partial?: Partial<ChatSession>): ChatSession {
   return { id: crypto.randomUUID(), title: "New chat", log: [], plan: [], todos: [], ...partial };
@@ -112,6 +120,38 @@ const editorOptions = {
   },
 };
 
+function fileToChatImage(file: File): Promise<ChatImage> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const blobUrl = URL.createObjectURL(file);
+    img.onload = () => {
+      const max = 1280;
+      let w = img.width;
+      let h = img.height;
+      if (w > max || h > max) {
+        const scale = max / Math.max(w, h);
+        w = Math.round(w * scale);
+        h = Math.round(h * scale);
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      canvas.getContext("2d")?.drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(blobUrl);
+      resolve({
+        id: crypto.randomUUID(),
+        mime: "image/jpeg",
+        dataUrl: canvas.toDataURL("image/jpeg", 0.82),
+      });
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(blobUrl);
+      reject(new Error("bad image"));
+    };
+    img.src = blobUrl;
+  });
+}
+
 function utf8Safe(s: string) {
   return s.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, "\uFFFD");
 }
@@ -140,6 +180,10 @@ export default function Ide() {
   const [path, setPath] = useState("README.md");
   const [content, setContent] = useState("");
   const [prompt, setPrompt] = useState("");
+  const [draftImages, setDraftImages] = useState<ChatImage[]>([]);
+  const [visionOk, setVisionOk] = useState(false);
+  const [imageHint, setImageHint] = useState("");
+  const [clarify, setClarify] = useState<{ id: string; questions: PlanQuestion[]; picks: Record<string, string> } | null>(null);
   const [sessions, setSessions] = useState<ChatSession[]>(() => [newSession({ id: "welcome", title: "Chat" })]);
   const [activeChatId, setActiveChatId] = useState("welcome");
   const [chatCollapsed, setChatCollapsed] = useState(false);
@@ -361,6 +405,13 @@ export default function Ide() {
   }
 
   useEffect(() => {
+    void api()
+      .agentCaps?.()
+      .then((c) => setVisionOk(!!c?.images))
+      .catch(() => setVisionOk(false));
+  }, []);
+
+  useEffect(() => {
     if (mode !== "diff") return;
     const onKey = (e: KeyboardEvent) => {
       if (e.ctrlKey && e.shiftKey && (e.key === "Y" || e.key === "y")) {
@@ -420,27 +471,68 @@ export default function Ide() {
     }
   }
 
-  function runAgent() {
-    const text = prompt.trim();
-    if (!text) return;
+  async function addPastedFiles(files: File[]) {
+    if (!visionOk) {
+      setImageHint("This model does not accept images.");
+      return;
+    }
+    const next: ChatImage[] = [];
+    for (const file of files.slice(0, 4)) {
+      if (!file.type.startsWith("image/")) continue;
+      try {
+        next.push(await fileToChatImage(file));
+      } catch {
+        /* skip bad paste */
+      }
+    }
+    if (!next.length) return;
+    setDraftImages((cur) => [...cur, ...next].slice(0, 4));
+  }
+
+  function runAgent(override?: { text?: string; mode?: AgentMode; skipUser?: boolean }) {
+    const text = (override?.text ?? prompt).trim();
+    const images = override?.text != null ? [] : draftImages;
+    if (!text && !images.length) return;
+    if (images.length && !visionOk) {
+      setImageHint("This model does not accept images.");
+      setDraftImages([]);
+      return;
+    }
     const chatId = activeChatIdRef.current;
     streamMsgIdRef.current = null;
     setAgentBusy(true);
     const prior = sessions.find((s) => s.id === chatId)?.log ?? [];
-    const history = [...prior, { role: "user" as const, text }]
+    const caption = text || (images.length ? `(${images.length} image${images.length > 1 ? "s" : ""})` : "");
+    const history = prior
       .filter((m) => (m.role === "user" || m.role === "assistant") && m.text.trim())
       .slice(-20)
       .map((m) => ({ role: m.role, text: utf8Safe(m.text) }));
+    const mode = override?.mode ?? agentModeRef.current;
     patchSession(chatId, (s) => ({
       ...s,
-      title: s.title === "New chat" || s.title === "Chat" ? text.slice(0, 36) : s.title,
-      log: [...s.log.map((m) => (m.streaming ? { ...m, streaming: false } : m)), { id: crypto.randomUUID(), role: "user", text }],
+      title: s.title === "New chat" || s.title === "Chat" ? caption.slice(0, 36) : s.title,
+      log: override?.skipUser
+        ? s.log.map((m) => (m.streaming ? { ...m, streaming: false } : m))
+        : [
+            ...s.log.map((m) => (m.streaming ? { ...m, streaming: false } : m)),
+            { id: crypto.randomUUID(), role: "user", text: caption, images },
+          ],
       todos: [],
     }));
-    setPrompt("");
-    loadGraph(text).catch(() => undefined);
+    if (override?.text == null) {
+      setPrompt("");
+      setDraftImages([]);
+    }
+    loadGraph(text || "image").catch(() => undefined);
     void api()
-      .startAgent(text, { history, mode: agentModeRef.current })
+      .startAgent(caption, {
+        history,
+        mode,
+        images: images.map((img) => ({
+          mime: img.mime,
+          data: img.dataUrl.replace(/^data:[^;]+;base64,/, ""),
+        })),
+      })
       .catch((err) => {
         setAgentBusy(false);
         patchSession(chatId, (s) => ({
@@ -451,6 +543,37 @@ export default function Ide() {
           ],
         }));
       });
+  }
+
+  async function submitClarify() {
+    if (!clarify) return;
+    const answers = { ...clarify.picks };
+    for (const q of clarify.questions) {
+      if (!answers[q.id]) answers[q.id] = "";
+    }
+    await api().planAnswer?.({ id: clarify.id, answers });
+    patchSession(activeChatIdRef.current, (s) => ({
+      ...s,
+      log: [
+        ...s.log,
+        {
+          id: crypto.randomUUID(),
+          role: "user",
+          text: clarify.questions.map((q) => `${q.prompt}: ${answers[q.id] || "(skipped)"}`).join("\n"),
+        },
+      ],
+    }));
+    setClarify(null);
+  }
+
+  function buildPlan() {
+    const doc = session?.planDoc;
+    if (!doc?.markdown.trim()) return;
+    setAgentMode("agent");
+    runAgent({
+      text: `Implement this approved plan. Do not re-plan. Follow the files and steps.\n\n# ${doc.title}\n\n${doc.markdown}`,
+      mode: "agent",
+    });
   }
 
   useEffect(() => {
@@ -535,6 +658,24 @@ export default function Ide() {
           walkIds: (ev.walkIds as string[]) || [],
           anchorId: ev.anchorId as string | undefined,
         });
+      }
+      if (ev.type === "questions") {
+        const rows = Array.isArray(ev.questions) ? ev.questions : [];
+        setClarify({
+          id: String(ev.id || ""),
+          questions: rows.map((q, i) => ({
+            id: String(q.id || i + 1),
+            prompt: String(q.prompt || ""),
+            options: Array.isArray(q.options) ? q.options.map(String) : [],
+          })),
+          picks: {},
+        });
+      }
+      if (ev.type === "plan_doc") {
+        patchSession(chatId, (s) => ({
+          ...s,
+          planDoc: { title: String(ev.title || "Plan"), markdown: String(ev.markdown || "") },
+        }));
       }
       if (ev.type === "skill") rememberSkill(ev);
       if (ev.type === "fs") void loadTree();
@@ -813,6 +954,61 @@ export default function Ide() {
                 </div>
               </div>
               <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+                {clarify ? (
+                  <div className="shrink-0 space-y-2 border-b border-border-subtle px-3 py-2">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-foreground">Clarifying questions</p>
+                    {clarify.questions.map((q) => (
+                      <div key={q.id} className="space-y-1">
+                        <p className="text-[12px] leading-5">{q.prompt}</p>
+                        {q.options.length ? (
+                          <div className="flex flex-wrap gap-1">
+                            {q.options.map((opt) => (
+                              <Button
+                                key={opt}
+                                size="sm"
+                                variant={clarify.picks[q.id] === opt ? "secondary" : "ghost"}
+                                className="h-6 px-2 text-[11px]"
+                                onClick={() => setClarify((c) => (c ? { ...c, picks: { ...c.picks, [q.id]: opt } } : c))}
+                              >
+                                {opt}
+                              </Button>
+                            ))}
+                          </div>
+                        ) : (
+                          <input
+                            className="h-7 w-full rounded-md border border-border-subtle bg-transparent px-2 text-[12px]"
+                            value={clarify.picks[q.id] || ""}
+                            onChange={(e) => setClarify((c) => (c ? { ...c, picks: { ...c.picks, [q.id]: e.target.value } } : c))}
+                          />
+                        )}
+                      </div>
+                    ))}
+                    <Button size="sm" className="h-7 px-3 text-[11px]" onClick={() => void submitClarify()}>
+                      Continue planning
+                    </Button>
+                  </div>
+                ) : null}
+                {session?.planDoc ? (
+                  <div className="shrink-0 space-y-2 border-b border-border-subtle px-3 py-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-foreground">Plan</p>
+                      <Button size="sm" className="h-7 bg-[#2ea043] px-3 text-[11px] text-white hover:bg-[#3fb950]" onClick={buildPlan}>
+                        Build
+                      </Button>
+                    </div>
+                    <p className="font-mono text-[12px]">{session.planDoc.title}</p>
+                    <Textarea
+                      value={session.planDoc.markdown}
+                      onChange={(e) =>
+                        patchSession(activeChatId, (s) => ({
+                          ...s,
+                          planDoc: s.planDoc ? { ...s.planDoc, markdown: e.target.value } : s.planDoc,
+                        }))
+                      }
+                      className="max-h-48 min-h-[96px] resize-y font-mono text-[11px] leading-5"
+                    />
+                  </div>
+                ) : null}
                 {pendingSkills.length > 0 ? (
                   <div className="shrink-0 space-y-2 border-b border-primary/40 bg-[#2ea04314] px-3 py-2">
                     <p className="text-[11px] font-semibold uppercase tracking-wide text-foreground">
@@ -869,6 +1065,22 @@ export default function Ide() {
                               <span className="truncate">{m.name || m.text}</span>
                               {m.args?.path ? <span className="truncate text-muted-foreground">{String(m.args.path)}</span> : null}
                             </span>
+                          ) : m.role === "user" ? (
+                            <div className="space-y-2">
+                              {m.images?.length ? (
+                                <div className="flex flex-wrap gap-1.5">
+                                  {m.images.map((img) => (
+                                    <img
+                                      key={img.id}
+                                      src={img.dataUrl}
+                                      alt=""
+                                      className="max-h-16 max-w-[7.5rem] rounded-md border border-border-subtle object-cover"
+                                    />
+                                  ))}
+                                </div>
+                              ) : null}
+                              {m.text}
+                            </div>
                           ) : (
                             m.text
                           )}
@@ -885,18 +1097,70 @@ export default function Ide() {
                 </ScrollArea>
                 <div className="min-w-0 shrink-0 border-t border-border-subtle p-3">
                   <div className="surface-inset relative min-w-0 rounded-xl border border-border-subtle focus-within:border-ring focus-within:shadow-[0_0_0_1px_var(--ring)]">
+                    {imageHint ? (
+                      <p className="px-3 pb-1 pt-2 text-[11px] text-red-400">{imageHint}</p>
+                    ) : null}
+                    {draftImages.length ? (
+                      <div className="flex flex-wrap gap-1.5 px-3 pt-3">
+                        {draftImages.map((img) => (
+                          <div key={img.id} className="relative">
+                            <img src={img.dataUrl} alt="" className="h-10 w-10 rounded-md border border-border-subtle object-cover" />
+                            <button
+                              type="button"
+                              className="absolute -right-1 -top-1 flex size-4 items-center justify-center rounded-full bg-secondary text-[10px] text-foreground"
+                              onClick={() => setDraftImages((cur) => cur.filter((x) => x.id !== img.id))}
+                              aria-label="Remove image"
+                            >
+                              <X className="size-3" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
                     <Textarea
                       value={prompt}
                       onChange={(e) => setPrompt(e.target.value)}
+                      onPaste={(e) => {
+                        const files = [...e.clipboardData.items]
+                          .map((item) => (item.type.startsWith("image/") ? item.getAsFile() : null))
+                          .filter((f): f is File => !!f);
+                        if (!files.length) return;
+                        e.preventDefault();
+                        if (!visionOk) {
+                          setImageHint("This model does not accept images.");
+                          return;
+                        }
+                        void addPastedFiles(files);
+                      }}
+                      onDrop={(e) => {
+                        const files = [...e.dataTransfer.files].filter((f) => f.type.startsWith("image/"));
+                        if (!files.length) return;
+                        e.preventDefault();
+                        if (!visionOk) {
+                          setImageHint("This model does not accept images.");
+                          return;
+                        }
+                        void addPastedFiles(files);
+                      }}
+                      onDragOver={(e) => {
+                        if ([...e.dataTransfer.types].includes("Files")) e.preventDefault();
+                      }}
                       onKeyDown={(e) => {
+                        if (e.key === "Tab" && e.shiftKey) {
+                          e.preventDefault();
+                          const order: AgentMode[] = ["agent", "plan", "chat"];
+                          const i = order.indexOf(agentMode);
+                          setAgentMode(order[(i + 1) % order.length]);
+                          return;
+                        }
                         if (e.key === "Enter" && !e.shiftKey) {
                           e.preventDefault();
-                          runAgent();
+                          if (!agentBusy) runAgent();
                         }
                       }}
                       placeholder={
                         agentMode === "plan"
-                          ? "Describe the change — I’ll outline steps, no edits…"
+                          ? "Describe the work — I'll research, ask questions, then you Build…"
                           : agentMode === "chat"
                             ? "Ask about this workspace…"
                             : "Plan, search the graph, or edit files…"
@@ -905,21 +1169,28 @@ export default function Ide() {
                     />
                     <div className="absolute bottom-1.5 left-2 right-2 flex items-center gap-1">
                       <ModeMenu value={agentMode} open={agentMenu} onOpenChange={setAgentMenu} onChange={setAgentMode} />
-                      <div className="ml-auto flex gap-1">
-                        <ToolBtn label="New chat" onClick={startNewChat}>
-                          <Plus className="size-3.5" />
-                        </ToolBtn>
-                        <Button
-                          size="icon"
-                          className="h-7 w-7 rounded-lg"
-                          onClick={runAgent}
-                          disabled={!prompt.trim()}
-                        >
-                          <ArrowUp className="size-3.5" />
-                        </Button>
-                        <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => api().abortAgent()}>
-                          <Square className="size-3" />
-                        </Button>
+                      <div className="ml-auto flex items-center gap-1">
+                        {agentBusy ? (
+                          <Button
+                            size="icon"
+                            variant="secondary"
+                            className="h-7 w-7 rounded-full"
+                            onClick={() => api().abortAgent()}
+                            aria-label="Stop"
+                          >
+                            <Square className="size-3 fill-current" />
+                          </Button>
+                        ) : (
+                          <Button
+                            size="icon"
+                            className="h-7 w-7 rounded-full"
+                            onClick={runAgent}
+                            disabled={!prompt.trim() && !draftImages.length}
+                            aria-label="Send"
+                          >
+                            <ArrowUp className="size-3.5" />
+                          </Button>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -1030,30 +1301,32 @@ function ModeMenu({
   onOpenChange: (open: boolean) => void;
   onChange: (mode: AgentMode) => void;
 }) {
-  const items: { id: AgentMode; label: string; hint: string }[] = [
-    { id: "agent", label: "Agent", hint: "Edit files with tools" },
-    { id: "plan", label: "Plan", hint: "Read-only, numbered steps" },
-    { id: "chat", label: "Chat", hint: "Ask questions, no writes" },
+  const items: { id: AgentMode; label: string; hint: string; Icon: typeof Infinity }[] = [
+    { id: "agent", label: "Agent", hint: "Edit files with tools", Icon: Infinity },
+    { id: "plan", label: "Plan", hint: "Research, questions, then you Build", Icon: ClipboardList },
+    { id: "chat", label: "Chat", hint: "Ask questions, no writes", Icon: MessageSquare },
   ];
   const current = items.find((i) => i.id === value) || items[0];
+  const CurrentIcon = current.Icon;
   return (
     <div className="relative">
       <button
         type="button"
-        className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-[12px] text-muted-foreground hover:bg-accent hover:text-foreground"
+        className="inline-flex h-7 items-center gap-1.5 rounded-full border border-border-subtle bg-secondary/80 px-2.5 text-[12px] font-medium text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] hover:bg-accent"
         onClick={() => onOpenChange(!open)}
       >
+        <CurrentIcon className="size-3.5 text-muted-foreground" />
         {current.label}
-        <span className="text-[10px]">▾</span>
+        <ChevronDown className="size-3 text-muted-foreground" />
       </button>
       {open ? (
-        <div className="absolute bottom-8 left-0 z-20 w-56 overflow-hidden rounded-lg border border-border-subtle bg-popover p-1 shadow-[var(--elev-raised)]">
+        <div className="absolute bottom-8 left-0 z-20 w-56 overflow-hidden rounded-xl border border-border-subtle bg-popover p-1 shadow-[var(--elev-raised)]">
           {items.map((item) => (
             <button
               key={item.id}
               type="button"
               className={cn(
-                "flex w-full flex-col items-start rounded-md px-2 py-1.5 text-left",
+                "flex w-full items-start gap-2 rounded-lg px-2 py-1.5 text-left",
                 item.id === value ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground",
               )}
               onClick={() => {
@@ -1061,8 +1334,11 @@ function ModeMenu({
                 onOpenChange(false);
               }}
             >
-              <span className="text-[12px] font-medium">{item.label}</span>
-              <span className="text-[11px] opacity-70">{item.hint}</span>
+              <item.Icon className="mt-0.5 size-3.5 shrink-0" />
+              <span className="flex min-w-0 flex-col">
+                <span className="text-[12px] font-medium">{item.label}</span>
+                <span className="text-[11px] opacity-70">{item.hint}</span>
+              </span>
             </button>
           ))}
         </div>

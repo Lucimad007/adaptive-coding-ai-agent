@@ -24,8 +24,10 @@ contextBridge.exposeInMainWorld("harness", {
   skillTrace: (rel, task) => ipcRenderer.invoke("skills:trace", rel, task),
   skillReview: (opts) => ipcRenderer.invoke("skills:review", opts),
   skillsPending: () => ipcRenderer.invoke("skills:pending"),
+  planAnswer: (opts) => ipcRenderer.invoke("plan:answer", opts),
   pickWorkspace: () => ipcRenderer.invoke("workspace:pick"),
   startAgent: (prompt, opts) => ipcRenderer.invoke("agent:start", prompt, opts || {}),
+  agentCaps: () => ipcRenderer.invoke("agent:caps"),
   abortAgent: () => ipcRenderer.invoke("agent:abort"),
   onAgentEvent: (cb) => {
     const handler = (_e, ev) => cb(ev);

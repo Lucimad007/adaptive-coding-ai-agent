@@ -13,6 +13,20 @@ load_dotenv()
 OPENCODE_BASE_URL = os.getenv("OPENCODE_BASE_URL", "https://opencode.ai/zen/go/v1")
 OPENCODE_MODEL = os.getenv("OPENCODE_MODEL", "deepseek-flash")
 
+# OpenCode Go /chat/completions models that actually take image parts.
+VISION_MODELS = frozenset({"deepseek-v4-flash-vision-exp"})
+
+
+def vision_chat_model() -> str | None:
+    """Model that can see images, or None if this install cannot accept pastes."""
+    explicit = (os.getenv("OPENCODE_VISION_MODEL") or "").strip()
+    if explicit:
+        return explicit
+    model = (os.getenv("OPENCODE_MODEL") or OPENCODE_MODEL or "").strip()
+    if model in VISION_MODELS:
+        return model
+    return None
+
 
 def build_llm(*, temperature: float = 0.2, model: str | None = None) -> ChatOpenAI:
     api_key = os.getenv("OPENCODE_API_KEY")

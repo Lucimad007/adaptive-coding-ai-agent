@@ -61,6 +61,48 @@ def test_read_missing_file_returns_error(tmp_path: Path):
     assert "not found" in out.lower()
 
 
+def test_user_message_plain_and_image():
+    from langchain_core.messages import HumanMessage
+    from adaptive_agent.harness_worker import _user_message
+
+    plain = _user_message("hello", [])
+    assert isinstance(plain, HumanMessage)
+    assert plain.content == "hello"
+    vision = _user_message("look", [{"mime": "image/jpeg", "data": "abc"}])
+    assert isinstance(vision.content, list)
+    assert vision.content[0]["type"] == "text"
+    assert vision.content[1]["type"] == "image_url"
+    assert "base64,abc" in vision.content[1]["image_url"]["url"]
+
+
+def test_resolve_images_from_path(tmp_path: Path):
+    from adaptive_agent.harness_worker import _resolve_images, _user_message
+
+    p = tmp_path / "shot.jpg"
+    p.write_bytes(b"\xff\xd8\xff")
+    loaded = _resolve_images([{"mime": "image/jpeg", "path": str(p)}])
+    assert loaded and loaded[0]["data"]
+    msg = _user_message("see this", [{"path": str(p), "mime": "image/jpeg"}])
+    assert isinstance(msg.content, list)
+    assert msg.content[1]["type"] == "image_url"
+
+
+def test_create_plan_tool(tmp_path: Path):
+    tools = {t.name: t for t in make_tools(tmp_path, wait_plan=False)}
+    out = tools["create_plan"].invoke(
+        {"title": "Add auth", "markdown": "## Files\n- app.py\n", "todos": '[{"content":"wire login"}]'}
+    )
+    assert "Build" in out
+
+
+def test_ask_questions_without_wait(tmp_path: Path):
+    tools = {t.name: t for t in make_tools(tmp_path, wait_plan=False)}
+    out = tools["ask_clarifying_questions"].invoke(
+        {"questions": '[{"id":"1","prompt":"API or UI?","options":["API","UI"]}]'}
+    )
+    assert "waiting" in out
+
+
 def test_list_dir_empty(tmp_path: Path):
     tools = {t.name: t for t in make_tools(tmp_path)}
     out = tools["list_dir"].invoke({"path": "."})

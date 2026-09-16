@@ -12,6 +12,9 @@ export type AgentEvent = {
   walkIds?: string[];
   anchorId?: string;
   todos?: { id?: string; content?: string; status?: string }[];
+  questions?: { id?: string; prompt?: string; options?: string[] }[];
+  markdown?: string;
+  title?: string;
   version?: number;
   body?: string;
   rationale?: string;
@@ -40,8 +43,10 @@ export type HarnessApi = {
   skillTrace?: (rel: string, task?: string) => Promise<{ ok?: boolean; skill?: AgentEvent }>;
   skillReview?: (opts: { name: string; version: number; approve: boolean; reason?: string }) => Promise<{ ok?: boolean; status?: string }>;
   skillsPending?: () => Promise<{ ok?: boolean; skills?: AgentEvent[] }>;
+  planAnswer?: (opts: { id: string; answers: Record<string, string> }) => Promise<{ ok: boolean }>;
   pickWorkspace: () => Promise<{ root: string }>;
-  startAgent: (prompt: string, opts?: { history?: { role: string; text: string }[]; mode?: string }) => Promise<{ ok: boolean }>;
+  agentCaps?: () => Promise<{ images: boolean; visionModel?: string | null; model?: string }>;
+  startAgent: (prompt: string, opts?: { history?: { role: string; text: string }[]; mode?: string; images?: { mime: string; data: string }[] }) => Promise<{ ok: boolean; error?: string }>;
   abortAgent: () => Promise<{ ok: boolean }>;
   onAgentEvent: (cb: (ev: AgentEvent) => void) => () => void;
   termOpen: (size?: { cols: number; rows: number }) => Promise<{ ok: boolean }>;

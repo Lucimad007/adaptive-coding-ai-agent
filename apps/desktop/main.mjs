@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, dialog, ipcMain, nativeImage } from "electron";
@@ -18,6 +19,17 @@ import {
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
+function pythonEnv(extra = {}) {
+  return {
+    ...process.env,
+    PYTHONPATH: [REPO_ROOT, process.env.PYTHONPATH].filter(Boolean).join(path.delimiter),
+    PYTHONUNBUFFERED: "1",
+    PYTHONIOENCODING: "utf-8",
+    PYTHONNOUSERSITE: "1",
+    ...extra,
+  };
+}
+
 function loadDotEnv() {
   const envPath = path.join(REPO_ROOT, ".env");
   if (!fs.existsSync(envPath)) return;
@@ -29,6 +41,16 @@ function loadDotEnv() {
 }
 
 loadDotEnv();
+
+const VISION_MODELS = new Set(["deepseek-v4-flash-vision-exp"]);
+
+function visionModelId() {
+  const explicit = String(process.env.OPENCODE_VISION_MODEL || "").trim();
+  if (explicit) return explicit;
+  const model = String(process.env.OPENCODE_MODEL || "deepseek-flash").trim();
+  if (VISION_MODELS.has(model)) return model;
+  return null;
+}
 
 if (process.platform === "win32") {
   app.commandLine.appendSwitch("disable-features", "WindowsScrollingPersonality");
@@ -47,9 +69,9 @@ let termSender = null;
 
 function runSkills(payload) {
   return new Promise((resolve, reject) => {
-    const proc = spawn(pythonBin(), ["-m", "adaptive_agent.harness_worker", "skills"], {
+    const proc = spawn(pythonBin(), ["-B", "-m", "adaptive_agent.harness_worker", "skills"], {
       cwd: REPO_ROOT,
-      env: { ...process.env, PYTHONPATH: REPO_ROOT, PYTHONUNBUFFERED: "1", PYTHONIOENCODING: "utf-8" },
+      env: pythonEnv(),
     });
     let out = "";
     let err = "";
@@ -74,9 +96,9 @@ function runSkills(payload) {
 
 function runWorker(args) {
   return new Promise((resolve, reject) => {
-    const proc = spawn(pythonBin(), ["-m", "adaptive_agent.harness_worker", ...args], {
+    const proc = spawn(pythonBin(), ["-B", "-m", "adaptive_agent.harness_worker", ...args], {
       cwd: REPO_ROOT,
-      env: { ...process.env, PYTHONPATH: REPO_ROOT },
+      env: pythonEnv(),
     });
     let out = "";
     let err = "";
@@ -302,21 +324,61 @@ handleIpc("skills:review", (_e, opts) =>
   }),
 );
 handleIpc("skills:pending", () => runSkills({ action: "pending" }));
+handleIpc("plan:answer", (_e, opts = {}) => {
+  const gatePath = path.join(REPO_ROOT, "data", "plan_gate.json");
+  fs.mkdirSync(path.dirname(gatePath), { recursive: true });
+  fs.writeFileSync(
+    gatePath,
+    JSON.stringify({
+      id: opts.id,
+      status: "answered",
+      answers: opts.answers || {},
+    }),
+  );
+  return { ok: true };
+});
 handleIpc("workspace:pick", async () => {
   const result = await dialog.showOpenDialog(win, { properties: ["openDirectory"] });
   if (result.canceled || !result.filePaths[0]) return { root: workspaceRoot() };
   setWorkspaceRoot(result.filePaths[0]);
   return { root: workspaceRoot() };
 });
+handleIpc("agent:caps", () => ({
+  images: Boolean(visionModelId()),
+  visionModel: visionModelId(),
+  model: process.env.OPENCODE_MODEL || "deepseek-flash",
+}));
+function persistRunImages(images) {
+  if (!Array.isArray(images) || !images.length) return [];
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "patchline-img-"));
+  const out = [];
+  for (const img of images.slice(0, 4)) {
+    const raw = String(img?.data || "").replace(/^data:[^;]+;base64,/, "").replace(/\s/g, "");
+    if (!raw) continue;
+    const file = path.join(dir, `${out.length}.jpg`);
+    fs.writeFileSync(file, Buffer.from(raw, "base64"));
+    out.push({ mime: String(img.mime || "image/jpeg"), path: file });
+  }
+  return out;
+}
 ipcMain.handle("agent:start", (_e, prompt, opts = {}) => {
+  const images = persistRunImages(opts.images);
+  if (images.length && !visionModelId()) {
+    win?.webContents.send("agent:event", {
+      type: "error",
+      message: "This model does not accept images.",
+    });
+    win?.webContents.send("agent:event", { type: "done" });
+    return { ok: false, error: "This model does not accept images." };
+  }
   const prev = agentProc;
   if (prev) {
     prev.kill();
     agentProc = null;
   }
-  const proc = spawn(pythonBin(), ["-m", "adaptive_agent.harness_worker", "run"], {
+  const proc = spawn(pythonBin(), ["-B", "-m", "adaptive_agent.harness_worker", "run"], {
     cwd: REPO_ROOT,
-    env: { ...process.env, PYTHONPATH: REPO_ROOT, PYTHONUNBUFFERED: "1", PYTHONIOENCODING: "utf-8" },
+    env: pythonEnv(),
   });
   agentProc = proc;
   let stdoutBuf = "";
@@ -366,6 +428,7 @@ ipcMain.handle("agent:start", (_e, prompt, opts = {}) => {
         }))
       : [],
     mode: opts.mode || "agent",
+    images,
   });
   win?.webContents.send("agent:event", { type: "status", text: "running" });
   proc.stdin.write(payload + "\n", "utf8", () => {

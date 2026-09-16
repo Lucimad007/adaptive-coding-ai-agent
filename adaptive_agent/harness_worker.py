@@ -8,7 +8,12 @@ import os
 import re
 import subprocess
 import sys
+import uuid
 from pathlib import Path
+
+_REPO = Path(__file__).resolve().parents[1]
+if str(_REPO) not in sys.path:
+    sys.path.insert(0, str(_REPO))
 
 from langchain.agents import create_agent
 from langchain_core.messages import AIMessage, HumanMessage
@@ -16,8 +21,9 @@ from langchain_core.tools import tool
 
 from adaptive_agent.code_graph import build_code_graph
 from adaptive_agent.graph_retrieve import graph_retrieve
-from adaptive_agent.llm import build_llm
+from adaptive_agent.llm import build_llm, vision_chat_model
 from adaptive_agent.memory import DEFAULT_DB, Memory, ROOT
+from adaptive_agent.plan_gate import wait_for_answers, write_gate
 from adaptive_agent.router import route_task
 from adaptive_agent.skill_loop import (
     coding_topic,
@@ -155,7 +161,7 @@ def _emit_proposed_skill(event: dict, *, wait: bool) -> str:
     return f"skill {event.get('name')} still pending (no decision yet). Stop and wait."
 
 
-def make_tools(workspace: Path, db_path: Path | None = None, wait_skills: bool = False):
+def make_tools(workspace: Path, db_path: Path | None = None, wait_skills: bool = False, wait_plan: bool = False):
     skill_db = db_path or DEFAULT_DB
     @tool
     def list_dir(path: str = ".") -> str:
@@ -326,15 +332,105 @@ def make_tools(workspace: Path, db_path: Path | None = None, wait_skills: bool =
         event = propose_pending_skill(name=name, body=body, rationale=rationale, db_path=skill_db)
         return _emit_proposed_skill(event, wait=wait_skills)
 
-    return [list_dir, read_file, write_file, apply_patch, grep, run_command, search_graph, update_todos, propose_skill]
+    @tool
+    def ask_clarifying_questions(questions: str) -> str:
+        """Ask the user 1-4 clarifying questions before writing a plan. Pass a JSON array of {id, prompt, options?} where options is an optional string list."""
+        try:
+            raw = json.loads(questions)
+        except json.JSONDecodeError:
+            return "error: questions must be a JSON array"
+        if not isinstance(raw, list) or not raw:
+            return "error: questions must be a non-empty JSON array"
+        items = []
+        for i, row in enumerate(raw[:4]):
+            if isinstance(row, str):
+                items.append({"id": str(i + 1), "prompt": row[:400], "options": []})
+                continue
+            if not isinstance(row, dict):
+                continue
+            opts = row.get("options") or []
+            if not isinstance(opts, list):
+                opts = []
+            items.append(
+                {
+                    "id": str(row.get("id") or i + 1),
+                    "prompt": str(row.get("prompt") or row.get("text") or "")[:400],
+                    "options": [str(o)[:120] for o in opts[:8]],
+                }
+            )
+        if not items:
+            return "error: no valid questions"
+        gate_id = str(uuid.uuid4())
+        write_gate({"id": gate_id, "status": "waiting", "questions": items})
+        emit({"type": "questions", "id": gate_id, "questions": items})
+        if not wait_plan:
+            return json.dumps({"id": gate_id, "status": "waiting"})
+        answers = wait_for_answers(gate_id, timeout=300)
+        return json.dumps(answers or {"status": "timeout"})
+
+    @tool
+    def create_plan(title: str, markdown: str, todos: str = "[]") -> str:
+        """Publish the implementation plan for the user to edit and Build. markdown should include files to change, steps, and risks. todos is a JSON array of {id, content}."""
+        try:
+            raw = json.loads(todos) if todos else []
+        except json.JSONDecodeError:
+            raw = []
+        items = []
+        if isinstance(raw, list):
+            for i, row in enumerate(raw[:24]):
+                if isinstance(row, str):
+                    items.append({"id": str(i + 1), "content": row[:240], "status": "pending"})
+                elif isinstance(row, dict):
+                    items.append(
+                        {
+                            "id": str(row.get("id") or i + 1),
+                            "content": str(row.get("content") or row.get("text") or "")[:240],
+                            "status": "pending",
+                        }
+                    )
+        if items:
+            emit({"type": "todos", "todos": items})
+        emit(
+            {
+                "type": "plan_doc",
+                "title": str(title or "Implementation plan")[:120],
+                "markdown": str(markdown or "")[:20_000],
+            }
+        )
+        return (
+            "Plan published. Stop. The user will edit it and click Build. "
+            "Do not write code until they switch to Agent with that plan."
+        )
+
+    return [
+        list_dir,
+        read_file,
+        write_file,
+        apply_patch,
+        grep,
+        run_command,
+        search_graph,
+        update_todos,
+        propose_skill,
+        ask_clarifying_questions,
+        create_plan,
+    ]
 
 
 def tools_for_mode(workspace: Path, chat_mode: str):
-    tools = {t.name: t for t in make_tools(workspace, wait_skills=True)}
+    tools = {t.name: t for t in make_tools(workspace, wait_skills=True, wait_plan=True)}
     if chat_mode == "chat":
         names = ("list_dir", "read_file", "search_graph", "update_todos")
     elif chat_mode == "plan":
-        names = ("list_dir", "read_file", "grep", "search_graph", "update_todos")
+        names = (
+            "list_dir",
+            "read_file",
+            "grep",
+            "search_graph",
+            "ask_clarifying_questions",
+            "create_plan",
+            "update_todos",
+        )
     else:
         names = (
             "list_dir",
@@ -358,9 +454,13 @@ MODE_PROMPT = {
         "When the user asks to add a file, write it with write_file. When the user asks to add a skill, call propose_skill. Never write skills/*.md as already-active; the user must Accept in chat."
     ),
     "plan": (
-        "PLAN MODE: read-only. Inspect with list_dir/read_file/grep/search_graph. "
-        "Call update_todos with the full plan as pending items. Do not write, patch, or run commands. "
-        "Also summarize the plan in your reply."
+        "PLAN MODE (Cursor-style): you do not implement. Sequence:\n"
+        "1) If the request is ambiguous, call ask_clarifying_questions once (JSON array of "
+        "{id, prompt, options?}) and wait for the user's answers.\n"
+        "2) Research the repo with search_graph, list_dir, read_file, grep. Name real files.\n"
+        "3) Call create_plan with a markdown plan: overview, files to change (paths), "
+        "implementation steps, risks/alternatives, and todos JSON.\n"
+        "4) Stop. Do not write, patch, or run_command. The user edits the plan and clicks Build."
     ),
     "chat": (
         "CHAT MODE: answer questions about the workspace. You may list and read files. "
@@ -400,6 +500,45 @@ def cmd_retrieve(workspace: Path, query: str) -> None:
     )
 
 
+def _resolve_images(images: list | None) -> list[dict]:
+    """Load image bytes from IPC payload or temp files written by Electron."""
+    import base64
+
+    out: list[dict] = []
+    for img in (images or [])[:4]:
+        if not isinstance(img, dict):
+            continue
+        mime = str(img.get("mime") or "image/jpeg")
+        path = str(img.get("path") or "").strip()
+        raw = str(img.get("data") or "").strip()
+        if path:
+            p = Path(path)
+            if p.is_file():
+                raw = base64.b64encode(p.read_bytes()).decode("ascii")
+        if raw.startswith("data:"):
+            raw = raw.split(",", 1)[-1]
+        raw = "".join(raw.split())
+        if not raw:
+            continue
+        out.append({"mime": mime, "data": raw})
+    return out
+
+
+def _user_message(prompt: str, images: list | None = None) -> HumanMessage:
+    resolved = _resolve_images(images)
+    text = (prompt or "").strip() or "See the attached image."
+    if resolved:
+        text = f"{text}\n\n[{len(resolved)} attached image(s). You can see them; answer from the pixels.]"
+    parts: list[dict] = [{"type": "text", "text": text[:12_000]}]
+    for img in resolved:
+        mime = str(img.get("mime") or "image/jpeg")
+        url = f"data:{mime};base64,{img['data']}"
+        parts.append({"type": "image_url", "image_url": {"url": url}})
+    if len(parts) == 1:
+        return HumanMessage(content=text[:12_000])
+    return HumanMessage(content=parts)
+
+
 def _history_messages(history: list | None) -> list:
     out: list = []
     for item in (history or [])[-20:]:
@@ -416,7 +555,13 @@ def _history_messages(history: list | None) -> list:
     return out
 
 
-def run_coding_agent(workspace: Path, prompt: str, history: list | None = None, chat_mode: str = "agent") -> dict:
+def run_coding_agent(
+    workspace: Path,
+    prompt: str,
+    history: list | None = None,
+    chat_mode: str = "agent",
+    images: list | None = None,
+) -> dict:
     """One Patchline-style coding run. Emits JSONL events; returns retrieval + messages."""
     emit({"type": "status", "text": "running"})
     workspace = workspace.resolve()
@@ -433,7 +578,25 @@ def run_coding_agent(workspace: Path, prompt: str, history: list | None = None, 
     emit(_plan(inspect="active", edit="pending"))
     ctx = "\n".join(f"- {n.id}" for n, _ in retrieved["hits"])
     chat_mode = chat_mode if chat_mode in MODE_PROMPT else "agent"
-    chosen = route_task("implement code " + prompt)
+    from adaptive_agent.router import route_task as route_prompt
+    chosen = route_prompt("implement code " + prompt)
+    vision = _resolve_images(images)
+    if vision and not vision_chat_model():
+        emit(
+            {
+                "type": "error",
+                "message": (
+                    "This model does not accept images. "
+                    "Set OPENCODE_MODEL=deepseek-v4-flash-vision-exp "
+                    "(or OPENCODE_VISION_MODEL) in .env, then restart."
+                ),
+            }
+        )
+        emit({"type": "done"})
+        return {"hits": retrieved["hits"], "reply": ""}
+    model_id = vision_chat_model() if vision else chosen.model
+    if vision:
+        emit({"type": "status", "text": f"vision {model_id}"})
     tools = tools_for_mode(workspace, chat_mode)
     box = SkillBox(DEFAULT_DB)
     try:
@@ -442,7 +605,7 @@ def run_coding_agent(workspace: Path, prompt: str, history: list | None = None, 
     except Exception:
         skill_block = ""
     agent = create_agent(
-        model=build_llm(model=chosen.model, temperature=0.2 if chat_mode != "chat" else 0.4),
+        model=build_llm(model=model_id, temperature=0.2 if chat_mode != "chat" else 0.4),
         tools=tools,
         system_prompt=(
             f"{chosen.system_prompt}\n\n{PLAN_SKILL}\n\n"
@@ -458,8 +621,7 @@ def run_coding_agent(workspace: Path, prompt: str, history: list | None = None, 
     error_bits: list[str] = []
     reply_parts: list[str] = []
     messages = _history_messages(history)
-    if not messages or getattr(messages[-1], "content", None) != prompt:
-        messages.append(HumanMessage(content=prompt))
+    messages.append(_user_message(prompt, vision))
     for stream_mode, data in agent.stream(
         {"messages": messages},
         stream_mode=["messages", "updates"],
@@ -539,10 +701,10 @@ def cmd_skills() -> None:
 
 
 def cmd_run() -> None:
-    line = sys.stdin.readline()
-    if not line.strip():
+    raw = sys.stdin.buffer.read()
+    if not raw.strip():
         return
-    msg = _sanitize(json.loads(line))
+    msg = _sanitize(json.loads(raw.decode("utf-8")))
     if msg.get("type") != "start_run":
         return
     try:
@@ -551,6 +713,7 @@ def cmd_run() -> None:
                 msg["prompt"],
                 msg.get("history") or [],
                 str(msg.get("mode") or "agent"),
+                msg.get("images") or [],
             )
     except Exception as exc:
         emit({"type": "error", "message": str(exc)})
