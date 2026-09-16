@@ -28,7 +28,8 @@ contextBridge.exposeInMainWorld("harness", {
     ipcRenderer.on("agent:event", handler);
     return () => ipcRenderer.removeListener("agent:event", handler);
   },
-  termOpen: () => ipcRenderer.send("term:open"),
+  termOpen: (size) => ipcRenderer.invoke("term:open", size),
+  termResize: (size) => ipcRenderer.send("term:resize", size),
   termData: (chunk) => ipcRenderer.send("term:data", chunk),
   termClose: () => ipcRenderer.send("term:close"),
   onTermData: (cb) => {

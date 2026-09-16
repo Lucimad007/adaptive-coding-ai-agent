@@ -231,15 +231,16 @@ export default function Ide() {
             <ResizablePanelGroup direction="vertical" className="min-h-0 min-w-0">
               <ResizablePanel defaultSize={78} minSize={30} className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-[var(--editor)]">
                 <div className="surface-chrome flex h-9 min-w-0 shrink-0 items-stretch overflow-hidden">
-                  <div className="flex min-w-0 flex-1 overflow-x-auto">
+                  <ScrollArea className="tab-strip h-9 min-w-0 flex-1">
+                    <div className="flex h-9 w-max min-w-full items-stretch">
                     {openTabs.map((t) => (
                     <button
                       key={t}
                       onClick={() => openFile(t)}
                       className={cn(
-                        "group flex max-w-[180px] shrink-0 items-center gap-1.5 border-r border-border-subtle px-3 text-[12.5px]",
+                        "group flex h-9 max-w-[180px] shrink-0 items-center gap-1.5 border-r border-border-subtle px-3 text-[12.5px]",
                         t === path && mode !== "diff"
-                          ? "bg-[var(--editor)] text-foreground shadow-[0_1px_0_rgba(255,255,255,0.04)_inset]"
+                          ? "bg-[var(--editor)] text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] border-b-2 border-b-primary"
                           : "text-muted-foreground hover:text-foreground",
                       )}
                     >
@@ -251,7 +252,8 @@ export default function Ide() {
                       />
                     </button>
                     ))}
-                  </div>
+                    </div>
+                  </ScrollArea>
                   <div className="ml-auto flex shrink-0 items-center gap-0.5 px-2">
                     <ToolBtn label="Save" onClick={save}>
                       <Save className="size-3.5" />
@@ -267,7 +269,12 @@ export default function Ide() {
                         <Button
                           size="sm"
                           variant="ghost"
-                          className={cn("h-6 gap-1 px-2 text-[11px]", mode === "preview" && "bg-card text-foreground shadow-[var(--elev-raised)]")}
+                          className={cn(
+                            "h-6 gap-1 px-2 text-[11px]",
+                            mode === "preview"
+                              ? "bg-[#3a3a3a] text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]"
+                              : "text-muted-foreground hover:text-foreground",
+                          )}
                           onClick={() => setMode("preview")}
                         >
                           <BookOpen className="size-3" />
@@ -276,7 +283,12 @@ export default function Ide() {
                         <Button
                           size="sm"
                           variant="ghost"
-                          className={cn("h-6 gap-1 px-2 text-[11px]", mode === "edit" && "bg-card text-foreground shadow-[var(--elev-raised)]")}
+                          className={cn(
+                            "h-6 gap-1 px-2 text-[11px]",
+                            mode === "edit"
+                              ? "bg-[#3a3a3a] text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]"
+                              : "text-muted-foreground hover:text-foreground",
+                          )}
                           onClick={() => setMode("edit")}
                         >
                           <Code2 className="size-3" />
@@ -348,9 +360,9 @@ export default function Ide() {
                 </div>
               </ResizablePanel>
               <ResizableHandle className="h-px" />
-              <ResizablePanel defaultSize={22} minSize={10} className="min-h-0 min-w-0 overflow-hidden bg-[var(--code)]">
-                <div className="border-b border-border-subtle px-3 py-1 text-[11px] font-medium text-muted-foreground">Terminal</div>
-                <div className="h-[calc(100%-28px)] min-w-0 overflow-hidden">
+              <ResizablePanel defaultSize={22} minSize={10} className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-[var(--code)]">
+                <div className="shrink-0 border-b border-border-subtle px-3 py-1 text-[11px] font-medium text-muted-foreground">Terminal</div>
+                <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
                   <TerminalPane />
                 </div>
               </ResizablePanel>

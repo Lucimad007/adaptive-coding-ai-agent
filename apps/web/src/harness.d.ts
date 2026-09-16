@@ -32,7 +32,8 @@ export type HarnessApi = {
   startAgent: (prompt: string) => Promise<{ ok: boolean }>;
   abortAgent: () => Promise<{ ok: boolean }>;
   onAgentEvent: (cb: (ev: AgentEvent) => void) => () => void;
-  termOpen: () => void;
+  termOpen: (size?: { cols: number; rows: number }) => Promise<{ ok: boolean }>;
+  termResize?: (size: { cols: number; rows: number }) => void;
   termData: (chunk: string) => void;
   termClose: () => void;
   onTermData: (cb: (d: string) => void) => () => void;

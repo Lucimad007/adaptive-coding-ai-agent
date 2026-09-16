@@ -9,9 +9,11 @@
     "test": "node --test workspace.spec.mjs worker-protocol.spec.mjs",
     "dist": "electron-builder --win nsis dir"
   },
-  "dependencies": {},
+  "dependencies": {
+    "@homebridge/node-pty-prebuilt-multiarch": "0.13.1"
+  },
   "devDependencies": {
-    "electron": "^33.2.1",
+    "electron": "29.4.6",
     "electron-builder": "^25.1.8"
   },
   "build": {
@@ -24,6 +26,7 @@
     "files": [
       "main.mjs",
       "preload.cjs",
+      "terminal.mjs",
       "workspace.mjs",
       "python.mjs",
       "build/icon.png"
@@ -35,7 +38,14 @@
       }
     ],
     "win": {
-      "target": ["nsis", "dir"]
-    }
+      "target": [
+        "nsis",
+        "dir"
+      ]
+    },
+    "asarUnpack": [
+      "node_modules/@homebridge/node-pty-prebuilt-multiarch/**",
+      "node_modules/node-pty/**"
+    ]
   }
 }

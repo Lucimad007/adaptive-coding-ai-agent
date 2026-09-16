@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { Minus, Square, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 function chrome() {
@@ -28,24 +27,17 @@ export default function TitleBar() {
   const controls = (
     <div className={cn("titlebar-no-drag flex h-full shrink-0 items-stretch", isMac ? "order-first" : "order-last")}>
       <WinBtn label="Minimize" onClick={() => api.minimizeWindow?.()} className="hover:bg-accent">
-        <Minus className="size-3.5" strokeWidth={1.5} />
+        <CaptionMinimize />
       </WinBtn>
       <WinBtn
         label={maximized ? "Restore" : "Maximize"}
         onClick={() => api.maximizeWindow?.()}
         className="hover:bg-accent"
       >
-        {maximized ? (
-          <span className="relative block size-3">
-            <Square className="absolute inset-0 size-3" strokeWidth={1.5} />
-            <Square className="absolute bottom-0 right-0 size-2 translate-x-0.5 translate-y-0.5" strokeWidth={1.5} />
-          </span>
-        ) : (
-          <Square className="size-3" strokeWidth={1.5} />
-        )}
+        {maximized ? <CaptionRestore /> : <CaptionMaximize />}
       </WinBtn>
       <WinBtn label="Close" onClick={() => api.closeWindow?.()} className="hover:bg-destructive hover:text-destructive-foreground">
-        <X className="size-3.5" strokeWidth={1.5} />
+        <CaptionClose />
       </WinBtn>
     </div>
   );
@@ -62,6 +54,39 @@ export default function TitleBar() {
       </div>
       {!isMac ? controls : null}
     </header>
+  );
+}
+
+function CaptionMinimize() {
+  return (
+    <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+      <path d="M1 5h8" fill="none" stroke="currentColor" strokeWidth="1" />
+    </svg>
+  );
+}
+
+function CaptionMaximize() {
+  return (
+    <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+      <rect x="1.5" y="1.5" width="7" height="7" fill="none" stroke="currentColor" strokeWidth="1" />
+    </svg>
+  );
+}
+
+function CaptionRestore() {
+  return (
+    <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+      <path d="M2 4h5v5H2z" fill="none" stroke="currentColor" strokeWidth="1" />
+      <path d="M4 4V2h5v5H7" fill="none" stroke="currentColor" strokeWidth="1" />
+    </svg>
+  );
+}
+
+function CaptionClose() {
+  return (
+    <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+      <path d="M1.5 1.5l7 7M8.5 1.5l-7 7" fill="none" stroke="currentColor" strokeWidth="1" />
+    </svg>
   );
 }
 

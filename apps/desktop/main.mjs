@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, dialog, ipcMain, nativeImage } from "electron";
 import { pythonBin } from "./python.mjs";
+import { closeShell, ptyAvailable, resizeShell, spawnShell, writeShell } from "./terminal.mjs";
 import {
   REPO_ROOT,
   readFile,
@@ -27,6 +28,10 @@ function loadDotEnv() {
 
 loadDotEnv();
 
+if (process.platform === "win32") {
+  app.commandLine.appendSwitch("disable-features", "WindowsScrollingPersonality");
+}
+
 const iconPath = path.join(here, "build", "icon.png");
 const appIcon = nativeImage.createFromPath(iconPath);
 
@@ -36,7 +41,7 @@ if (process.platform === "win32") {
 
 let win = null;
 let agentProc = null;
-let shellProc = null;
+let termSender = null;
 
 function runWorker(args) {
   return new Promise((resolve, reject) => {
@@ -192,22 +197,41 @@ ipcMain.handle("agent:abort", () => {
   return { ok: true };
 });
 
-ipcMain.on("term:open", (event) => {
-  shellProc?.kill();
-  const shell = process.platform === "win32" ? "powershell.exe" : "bash";
-  const args = process.platform === "win32" ? ["-NoLogo"] : [];
-  const proc = spawn(shell, args, { cwd: workspaceRoot(), env: process.env });
-  shellProc = proc;
-  proc.stdout.on("data", (d) => event.sender.send("term:data", d.toString()));
-  proc.stderr.on("data", (d) => event.sender.send("term:data", d.toString()));
-  proc.on("close", () => event.sender.send("term:data", "\r\n[shell exited]\r\n"));
+ipcMain.handle("term:open", (event, size = {}) => {
+  closeShell();
+  termSender = event.sender;
+  const cols = Math.max(8, Number(size.cols) || 80);
+  const rows = Math.max(2, Number(size.rows) || 24);
+  const send = (d) => termSender?.send("term:data", d);
+  if (!ptyAvailable()) {
+    send(
+      "\x1b[31mPTY not loaded.\x1b[0m Quit Patchline, then:\r\n  npm install --workspace=@harness/desktop\r\n",
+    );
+    return { ok: false };
+  }
+  try {
+    spawnShell({
+      cwd: workspaceRoot(),
+      cols,
+      rows,
+      onData: send,
+      onExit: (code) => send(`\r\n[shell exited ${code ?? 0}]\r\n`),
+    });
+    return { ok: true, pty: true };
+  } catch (err) {
+    send(`\x1b[31m[terminal] ${err.message}\x1b[0m\r\n`);
+    return { ok: false };
+  }
+});
+ipcMain.on("term:resize", (_e, size = {}) => {
+  resizeShell(Math.max(8, Number(size.cols) || 80), Math.max(2, Number(size.rows) || 24));
 });
 ipcMain.on("term:data", (_e, chunk) => {
-  shellProc?.stdin.write(chunk);
+  writeShell(typeof chunk === "string" ? chunk : String(chunk));
 });
 ipcMain.on("term:close", () => {
-  shellProc?.kill();
-  shellProc = null;
+  closeShell();
+  termSender = null;
 });
 
 ipcMain.handle("window:minimize", () => {
