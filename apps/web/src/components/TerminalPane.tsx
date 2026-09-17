@@ -98,5 +98,5 @@ export default function TerminalPane() {
     };
   }, []);
 
-  return <div ref={hostRef} className="patchline-terminal" />;
+  return <div ref={hostRef} className="patchline-terminal" data-testid="terminal" />;
 }

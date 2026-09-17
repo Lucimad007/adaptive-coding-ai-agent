@@ -211,6 +211,49 @@ export default function Ide() {
   const [graphFull, setGraphFull] = useState(false);
   const [pendingSkills, setPendingSkills] = useState<ChatMsg[]>([]);
   const chatEnd = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("shots") !== "1") return;
+    setImageHint("This model does not accept images.");
+    setVisionOk(false);
+    setPendingSkills([
+      {
+        id: "skip_muted_clips@3",
+        role: "skill",
+        text: "skip_muted_clips",
+        name: "skip_muted_clips",
+        version: 3,
+        status: "pending",
+        rationale: "Two Undo traces: muted clips still ranked first.",
+        body: "Drop clips with audio_gain 0 before scoring.",
+      },
+    ]);
+    setClarify({
+      id: "shot-q",
+      questions: [{ id: "1", prompt: "Where should skip happen?", options: ["ranker", "player"] }],
+      picks: { "1": "ranker" },
+    });
+    setSessions([
+      {
+        id: "welcome",
+        title: "Chat",
+        plan: [],
+        planDoc: {
+          title: "Skip muted clips",
+          markdown: "## Files\n- feed/ranker.py\n\nFilter muted clips before scoring.",
+        },
+        todos: [
+          { id: "1", content: "Read ranker.py", status: "completed" },
+          { id: "2", content: "Skip muted clips", status: "in_progress" },
+        ],
+        log: [
+          { id: "u1", role: "user", text: "Muted clips still show up first." },
+          { id: "a1", role: "assistant", text: "I'll inspect the ranker and patch it." },
+          { id: "t1", role: "tool", name: "read_file", text: "read_file", args: { path: "feed/ranker.py" } },
+        ],
+      },
+    ]);
+  }, []);
   const lang = monacoLanguage(mode === "diff" && diffs[diffIdx] ? diffs[diffIdx].path : path);
 
   async function refreshGitStatus() {
@@ -590,7 +633,9 @@ export default function Ide() {
         openFile("README.md").catch(() => undefined);
       }
     })();
-    void refreshPendingSkills();
+    if (new URLSearchParams(window.location.search).get("shots") !== "1") {
+      void refreshPendingSkills();
+    }
     const off = api().onAgentEvent((ev) => {
       const chatId = activeChatIdRef.current;
       if (ev.type === "token") {
@@ -780,6 +825,7 @@ export default function Ide() {
                               : "text-muted-foreground hover:text-foreground",
                           )}
                           onClick={() => setMode("preview")}
+                          aria-label="Preview"
                         >
                           <BookOpen className="size-3" />
                           Preview
@@ -794,6 +840,7 @@ export default function Ide() {
                               : "text-muted-foreground hover:text-foreground",
                           )}
                           onClick={() => setMode("edit")}
+                          aria-label="Source"
                         >
                           <Code2 className="size-3" />
                           Source
@@ -810,7 +857,7 @@ export default function Ide() {
                     </Button>
                   </div>
                 </div>
-                <div className="min-h-0 flex-1">
+                <div className="min-h-0 flex-1" data-testid="editor-stage">
                   {mode === "preview" ? (
                     <ScrollArea className="h-full min-w-0">
                       <article className="mx-auto max-w-3xl min-w-0 px-6 py-8 sm:px-8">
@@ -882,7 +929,7 @@ export default function Ide() {
                 </div>
               </ResizablePanel>
               <ResizableHandle className="h-px" />
-              <ResizablePanel defaultSize={22} minSize={10} className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-[var(--code)]">
+              <ResizablePanel defaultSize={22} minSize={10} className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-[var(--code)]" data-testid="terminal-pane">
                 <div className="flex h-8 shrink-0 items-center gap-2 border-b border-border-subtle px-3">
                   <span className="flex items-center gap-1.5" aria-hidden>
                     <span className="size-2.5 rounded-full bg-[#ff5f57]" />
@@ -908,6 +955,7 @@ export default function Ide() {
             onCollapse={() => setChatCollapsed(true)}
             onExpand={() => setChatCollapsed(false)}
             className="surface-chat flex min-w-0 flex-col overflow-hidden"
+            data-testid="chat-panel"
           >
             {chatCollapsed ? (
               <div className="flex h-full flex-col items-center gap-1 py-2">
@@ -1098,7 +1146,7 @@ export default function Ide() {
                 <div className="min-w-0 shrink-0 border-t border-border-subtle p-3">
                   <div className="surface-inset relative min-w-0 rounded-xl border border-border-subtle focus-within:border-ring focus-within:shadow-[0_0_0_1px_var(--ring)]">
                     {imageHint ? (
-                      <p className="px-3 pb-1 pt-2 text-[11px] text-red-400">{imageHint}</p>
+                      <p data-testid="image-hint" className="px-3 pb-1 pt-2 text-[11px] text-red-400">{imageHint}</p>
                     ) : null}
                     {draftImages.length ? (
                       <div className="flex flex-wrap gap-1.5 px-3 pt-3">
@@ -1202,7 +1250,7 @@ export default function Ide() {
           </ResizablePanel>
         </ResizablePanelGroup>
         {graphFull ? (
-          <div className="absolute inset-0 z-50 flex flex-col bg-background">
+          <div data-testid="graph-full" className="absolute inset-0 z-50 flex flex-col bg-background">
             <div className="titlebar-no-drag flex h-9 shrink-0 items-center justify-between border-b border-border-subtle px-3">
               <span className="text-[12px] font-semibold tracking-tight">Code graph</span>
               <Button size="sm" variant="ghost" className="h-7 px-2 text-[12px]" onClick={() => setGraphFull(false)}>
@@ -1310,7 +1358,7 @@ function ModeMenu({
   const current = items.find((i) => i.id === value) || items[0];
   const CurrentIcon = current.Icon;
   return (
-    <div className="relative">
+    <div className="relative" data-testid="mode-menu">
       <button
         type="button"
         className="inline-flex h-7 items-center gap-1.5 rounded-full border border-border-subtle bg-secondary/80 px-2.5 text-[12px] font-medium text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] hover:bg-accent"

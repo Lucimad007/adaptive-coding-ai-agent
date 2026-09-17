@@ -45,6 +45,7 @@ export default function TitleBar({ onOpenGraph }: { onOpenGraph?: () => void }) 
   return (
     <header
       className="titlebar surface-chrome flex h-8 shrink-0 items-stretch select-none"
+      data-testid="titlebar"
       onDoubleClick={onDoubleClick}
     >
       {isMac ? controls : null}

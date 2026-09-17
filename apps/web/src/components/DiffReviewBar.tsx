@@ -20,7 +20,10 @@ export default function DiffReviewBar({
 }) {
   const file = path.split("/").pop() || path;
   return (
-    <div className="flex shrink-0 flex-wrap items-center justify-center gap-2 border-b border-border-subtle bg-[var(--editor)] px-2 py-1.5">
+    <div
+      data-testid="diff-review"
+      className="flex shrink-0 flex-wrap items-center justify-center gap-2 border-b border-border-subtle bg-[var(--editor)] px-2 py-1.5"
+    >
         <div className="flex items-center gap-0.5">
           <Button
             type="button"

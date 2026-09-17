@@ -1,12 +1,12 @@
 <p align="center">
-  <img src="docs/screenshots/patchline-hero.png" alt="Patchline desktop IDE" width="100%" />
+  <img src="docs/screenshots/patchline-hero.png" alt="Patchline — Cursor-like coding harness" width="100%" />
 </p>
 
 <h1 align="center">Patchline</h1>
 
 <p align="center">
-  A local coding desk that actually sees your repo — graph retrieval, Agent / Plan / Chat modes,<br />
-  patch review, skill induction you Approve, and a real terminal. Powered by OpenCode Go.
+  A <strong>Cursor-style desktop harness</strong> for a local coding agent:<br />
+  explorer, Monaco, diffs you Accept, ConPTY terminal, Agent/Plan/Chat, and a fullscreen code graph.
 </p>
 
 <p align="center">
@@ -15,46 +15,80 @@
   <img alt="agent" src="https://img.shields.io/badge/LangChain-OpenCode%20Go-1e1e1e?style=flat-square" />
 </p>
 
-This repository is **adaptive-coding-ai-agent**: a Python LangChain worker plus **Patchline**, the Electron IDE that talks to it. The frozen base model is **DeepSeek Flash** on [OpenCode Go](https://opencode.ai/docs/go/). Adapters, a code graph, and human-gated skills sit on top — the model does not silently rewrite itself.
+**adaptive-coding-ai-agent** is both:
+
+1. **The harness** — `python -m adaptive_agent.harness_worker run` (LangGraph tools, JSONL events, graph retrieve, skill wait, plan gate).
+2. **The desk** — **Patchline**, an Electron IDE that looks and behaves like Cursor: custom title bar, file tree + git badges, editor tabs, right-hand agent chat, bottom terminal.
+
+Frozen base model: **DeepSeek Flash** on [OpenCode Go](https://opencode.ai/docs/go/). Adapters, a code graph, and human-gated skills sit on top — the model does not silently rewrite itself.
+
+<p align="center">
+  <img src="docs/screenshots/patchline-titlebar.png" alt="Title bar with Graph" width="100%" />
+</p>
 
 ---
 
 ## Tour
 
-Captures below are from the **running Electron app**, not generated mockups.
+All images below are **cropped from the running Electron app**. Skill / Plan / image-hint rows are the real components (same cards the harness drives).
 
-### Chat that runs tools, not a chatbot overlay
+### Agent / Plan / Chat
 
-<img src="docs/screenshots/patchline-chat.png" alt="Agent chat with todos, tools, and skill Accept" width="100%" />
+<p align="center">
+  <img src="docs/screenshots/patchline-modes.png" alt="Agent Plan Chat mode menu" width="360" />
+</p>
 
-Chats are tabs. The composer is Agent / Plan / Chat (Shift+Tab). While the worker runs, send becomes stop. The agent streams tokens, tool calls (`read_file`, `apply_patch`, `search_graph`, …), Cursor-style todos, and — when a skill is drafted from traces — an **Accept / Reject** card. Nothing auto-activates.
+Cursor-style pill: **Agent** (tools), **Plan** (research then you Build), **Chat** (no writes). Shift+Tab cycles. Send is on the right and becomes stop while the harness runs.
 
-### Plan mode (research → questions → markdown → Build)
+### Chat, skills, plan gate
 
-<img src="docs/screenshots/patchline-plan.png" alt="Plan mode clarifying questions and Build" width="100%" />
+<p align="center">
+  <img src="docs/screenshots/patchline-chat.png" alt="Chat with skill Accept/Reject, plan Build, todos" width="360" />
+</p>
 
-Plan does not dump fake todos. It can ask clarifying questions, research the graph and files, write an editable markdown plan, then wait until you hit **Build**.
+Chats are tabs. Tool rows, Cursor-style todos, clarifying questions, an editable plan + **Build**, and **Reject skill / Accept skill** — nothing auto-activates.
 
-### Diffs you Accept or Undo
+<p align="center">
+  <img src="docs/screenshots/patchline-plan.png" alt="Plan mode composer" width="360" />
+</p>
 
-<img src="docs/screenshots/patchline-diffs.png" alt="Muted git diff with Accept and Undo" width="100%" />
+### Images refused on text models
 
-Patches land in a Monaco diff with muted green/red and a review bar. Accept keeps the file; Undo restores the previous contents and records a trace.
+<p align="center">
+  <img src="docs/screenshots/patchline-no-images.png" alt="This model does not accept images" width="420" />
+</p>
 
-### Code graph, fullscreen
+Paste/drop is blocked unless a vision model is configured. No silent ignore.
 
-<img src="docs/screenshots/patchline-graph.png" alt="Code graph walk" width="100%" />
+### README Preview and Source
 
-Import, call, contains, and git co-edit edges. Retrieval walks PageRank from query anchors so the agent reads the right files first.
+<p align="center">
+  <img src="docs/screenshots/patchline-preview.png" alt="Markdown preview" width="48%" />
+  <img src="docs/screenshots/patchline-source.png" alt="Markdown source in Monaco" width="48%" />
+</p>
+
+### Diff review (Accept / Undo)
+
+<p align="center">
+  <img src="docs/screenshots/patchline-diff-bar.png" alt="Accept and Undo" width="100%" />
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/patchline-diffs.png" alt="Monaco side-by-side diff" width="100%" />
+</p>
+
+### Fullscreen code graph
+
+<p align="center">
+  <img src="docs/screenshots/patchline-graph.png" alt="Fullscreen code graph" width="100%" />
+</p>
 
 ### Explorer git + ConPTY terminal
 
 <p align="center">
-  <img src="docs/screenshots/patchline-explorer.png" alt="File tree git badges" width="48%" />
-  <img src="docs/screenshots/patchline-terminal.png" alt="Embedded terminal" width="48%" />
+  <img src="docs/screenshots/patchline-explorer.png" alt="Explorer git badges" width="32%" />
+  <img src="docs/screenshots/patchline-terminal.png" alt="ConPTY terminal" width="64%" />
 </p>
-
-Git status badges in the tree. A real Windows ConPTY / PTY shell under the editor — not a fake log pane.
 
 ---
 
@@ -62,13 +96,13 @@ Git status badges in the tree. A real Windows ConPTY / PTY shell under the edito
 
 | Surface | Behavior |
 | --- | --- |
+| **Harness worker** | Per-turn Python process, JSONL to the UI, UTF-8 on Windows |
 | **Agent** | Tools, todos, graph hits, file edits, skill proposals |
 | **Plan** | Questions → research → markdown plan → **Build** |
 | **Chat** | Workspace Q&A, lighter tools |
-| **Images** | Paste/drop only if a **vision** model is configured; text-only models refuse paste |
-| **Skills** | Failures/undos → pending skill → you Accept or Reject in chat |
+| **Images** | Paste only if a **vision** model is configured |
+| **Skills** | Traces → pending skill → you Accept or Reject |
 | **Router** | Frozen base + adapters (`coding`, `refuse_unknowns`, `polite_persona`, `brand_voice`) |
-| **Safety** | Workspace path checks, no `..` traversal, UTF-8 JSONL on Windows |
 
 ---
 
@@ -88,30 +122,24 @@ Put your OpenCode Go key in `.env` (`OPENCODE_API_KEY`). Get one at [opencode.ai
 npm run dev
 ```
 
-Vite serves the UI on `127.0.0.1:5173`; Electron opens Patchline. Pick a folder or set `WORKSPACE_ROOT`. Agent runs need the key **and** `.venv`.
+Vite on `127.0.0.1:5173`; Electron opens Patchline. Pick a folder or set `WORKSPACE_ROOT`. Agent runs need the key **and** `.venv`.
 
-Windows installer:
-
-```powershell
-npm run dist
-```
-
-Artifacts land in `apps/desktop/release`.
+Windows installer: `npm run dist` → `apps/desktop/release`.
 
 ---
 
 ## Layout
 
 ```
-adaptive_agent/     LangGraph worker, graph, memory, skills, router
+adaptive_agent/     harness worker, graph, memory, skills, router
 apps/web/           Vite + React + Monaco (Patchline UI)
 apps/desktop/       Electron, IPC, ConPTY, python spawn
 lessons/            L2 skill induction / L3–L4 graph walkthroughs
 tests/              pytest (no live LLM required)
-docs/screenshots/   README captures
+docs/screenshots/   cropped Electron captures
 ```
 
-The desktop process starts `python -m adaptive_agent.harness_worker run` with `PYTHONPATH` at the repo root, one worker per chat turn, JSONL events on stdout.
+The desktop process starts `python -m adaptive_agent.harness_worker run` with `PYTHONPATH` at the repo root.
 
 ---
 
@@ -125,15 +153,13 @@ The desktop process starts `python -m adaptive_agent.harness_worker run` with `P
 | `OPENCODE_VISION_MODEL` | unset | e.g. `deepseek-v4-flash-vision-exp` to allow image paste |
 | `WORKSPACE_ROOT` | repo root | Folder Patchline opens |
 
-Image paste is **off** unless `OPENCODE_MODEL` is a known vision id or `OPENCODE_VISION_MODEL` is set. DeepSeek Flash cannot see pixels; the UI blocks paste instead of ignoring the screenshot.
+Image paste is **off** unless `OPENCODE_MODEL` is a known vision id or `OPENCODE_VISION_MODEL` is set.
 
 ---
 
 ## Skills loop (L2)
 
-Traces from runs and Undo → pending draft in SQLite (`data/agent.db`) → **Accept / Reject** in chat → Skill Box retrieval into the next system prompt.
-
-CLI analog (no Oracle):
+Traces from runs and Undo → pending draft in SQLite (`data/agent.db`) → **Accept / Reject** in chat → Skill Box on the next harness prompt.
 
 ```powershell
 python lessons/l2_skill_induction.py
@@ -158,13 +184,7 @@ python lessons/l4_code_graph.py
 
 ```powershell
 python -m adaptive_agent.router "guess the unknown password"
-python -m adaptive_agent.router "write a polite thank-you to the customer"
 python -m adaptive_agent.router "implement the hash function" --run
-```
-
-Smoke the CLI agent:
-
-```powershell
 python agent.py
 ```
 
@@ -177,17 +197,19 @@ python -m pytest -q
 npm run test:desktop
 ```
 
-Electron file-open smoke (Vite already running):
+With Vite already running:
 
 ```powershell
-$env:RUN_ELECTRON=1; npm run test:e2e --workspace=@harness/web
+$env:RUN_ELECTRON=1; npx playwright test e2e/capture-screenshots.spec.ts --workspace=@harness/web
 ```
+
+(or `npm run test:e2e --workspace=@harness/web` for the file-open smoke).
 
 ---
 
 ## Stack
 
-Electron 29, Vite 6, React 19, Monaco, LangChain / LangGraph, OpenCode Go (`ChatOpenAI` compatible). Windows stdin is UTF-8; the worker sanitizes lone surrogates so JSONL never blows up on cp1252.
+Electron 29, Vite 6, React 19, Monaco, LangChain / LangGraph, OpenCode Go. The harness worker sanitizes lone surrogates so JSONL never blows up on Windows cp1252.
 
 ---
 
